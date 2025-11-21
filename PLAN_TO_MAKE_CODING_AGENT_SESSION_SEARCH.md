@@ -1,6 +1,6 @@
 # PLAN_FOR_CODING_AGENT_SEARCH
 
-**Progress 2025-11-21:** Schema/migration v1 scaffolded; normalized models added; connector framework with Codex + Cline implementations; CLI + TUI shell runs on nightly toolchain; rusqlite DAL (ensure_agent/workspace, insert_conversation_tree) implemented; index command calls connectors and persists conversations.
+**Progress 2025-11-21:** Schema/migration v1 + rusqlite DAL; connectors implemented (Codex, Cline, Gemini, Claude; Amp/OpenCode detect-only); index command now persists and indexes into Tantivy schema (agent/workspace/source_path/msg_idx/created_at/title/content) with optional watch scaffold; CLI/TUI shell on nightly.
 
 Ultra-high-level:
 Build a single Rust binary (`agent-search`, name TBD) that:
