@@ -5,7 +5,7 @@ use std::path::Path;
 use anyhow::Result;
 use tantivy::collector::TopDocs;
 use tantivy::query::{AllQuery, BooleanQuery, Occur, Query, QueryParser, RangeQuery, TermQuery};
-use tantivy::schema::{Document, IndexRecordOption, Term};
+use tantivy::schema::{IndexRecordOption, OwnedDocument, Term, Value};
 use tantivy::{Index, IndexReader};
 
 use crate::search::tantivy::fields_from_schema;
@@ -86,7 +86,7 @@ impl SearchClient {
             clauses.push((Occur::Must, Box::new(range)));
         }
 
-        let final_query: Box<dyn Query> = if clauses.is_empty() {
+        let q: Box<dyn Query> = if clauses.is_empty() {
             Box::new(AllQuery)
         } else if clauses.len() == 1 {
             clauses.pop().unwrap().1
@@ -94,26 +94,13 @@ impl SearchClient {
             Box::new(BooleanQuery::new(clauses))
         };
 
-        let top_docs = searcher.search(&final_query, &TopDocs::with_limit(limit))?;
+        let top_docs = searcher.search(&q, &TopDocs::with_limit(limit))?;
         let mut hits = Vec::new();
         for (score, addr) in top_docs {
-            let doc: Document = searcher.doc(addr)?;
-            let title = doc
-                .get_first(self.fields.title)
-                .and_then(|v| v.as_text())
-                .unwrap_or("")
-                .to_string();
-            let content = doc
-                .get_first(self.fields.content)
-                .and_then(|v| v.as_text())
-                .unwrap_or("")
-                .to_string();
-            let snippet = content.lines().next().unwrap_or("").to_string();
-            let source = doc
-                .get_first(self.fields.source_path)
-                .and_then(|v| v.as_text())
-                .unwrap_or("")
-                .to_string();
+            let doc: OwnedDocument = searcher.doc(addr)?;
+            let title = doc_title(&doc, self.fields.title);
+            let snippet = doc_snippet(&doc, self.fields.content);
+            let source = doc_text(&doc, self.fields.source_path);
             hits.push(SearchHit {
                 title,
                 snippet,
@@ -123,4 +110,26 @@ impl SearchClient {
         }
         Ok(hits)
     }
+}
+
+fn doc_title(doc: &OwnedDocument, field: tantivy::schema::Field) -> String {
+    doc.get_first(field)
+        .and_then(|v| v.as_text())
+        .unwrap_or("")
+        .to_string()
+}
+
+fn doc_snippet(doc: &OwnedDocument, field: tantivy::schema::Field) -> String {
+    doc_text(doc, field)
+        .lines()
+        .next()
+        .unwrap_or("")
+        .to_string()
+}
+
+fn doc_text(doc: &OwnedDocument, field: tantivy::schema::Field) -> String {
+    doc.get_first(field)
+        .and_then(|v: &Value| v.as_text())
+        .unwrap_or("")
+        .to_string()
 }
