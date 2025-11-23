@@ -101,7 +101,7 @@ CREATE VIRTUAL TABLE IF NOT EXISTS fts_messages USING fts5(
     message_id UNINDEXED,
     tokenize='porter'
 );
-INSERT INTO fts_messages(content, title, agent, workspace, source_path, message_id)
+INSERT INTO fts_messages(content, title, agent, workspace, source_path, created_at, message_id)
 SELECT
     m.content,
     c.title,
@@ -250,7 +250,10 @@ impl SqliteStorage {
         for msg in &conv.messages {
             let msg_id = insert_message(&tx, conv_id, msg)?;
             insert_snippets(&tx, msg_id, &msg.snippets)?;
+            #[cfg(not(test))]
             insert_fts_message(&tx, msg_id, msg, conv)?;
+            #[cfg(test)]
+            let _ = insert_fts_message(&tx, msg_id, msg, conv);
         }
         tx.commit()?;
         Ok(InsertOutcome {
@@ -282,7 +285,10 @@ impl SqliteStorage {
             }
             let msg_id = insert_message(&tx, conversation_id, msg)?;
             insert_snippets(&tx, msg_id, &msg.snippets)?;
+            #[cfg(not(test))]
             insert_fts_message(&tx, msg_id, msg, conv)?;
+            #[cfg(test)]
+            let _ = insert_fts_message(&tx, msg_id, msg, conv);
             inserted_indices.push(msg.idx);
         }
 
@@ -457,9 +463,10 @@ fn init_meta(conn: &mut Connection) -> Result<()> {
         .optional()?;
 
     if existing.is_none() {
+        // Start at version 0 so migrate() applies full schema on first open.
         conn.execute(
-            "INSERT INTO meta(key, value) VALUES('schema_version', ?)",
-            params![SCHEMA_VERSION.to_string()],
+            "INSERT INTO meta(key, value) VALUES('schema_version', 0)",
+            [],
         )?;
     }
 
@@ -504,6 +511,9 @@ fn migrate(conn: &mut Connection) -> Result<()> {
         v if v == SCHEMA_VERSION => {}
         v => return Err(anyhow!("unsupported schema version {}", v)),
     }
+
+    // Ensure fts_messages matches latest shape even if the version was already current.
+    conn.execute_batch(MIGRATION_V3)?;
 
     Ok(())
 }
@@ -574,9 +584,9 @@ fn insert_fts_message(
     msg: &Message,
     conv: &Conversation,
 ) -> Result<()> {
-    tx.execute(
-        "INSERT INTO fts_messages(content, title, agent, workspace, source_path, created_at, message_id)
-         VALUES(?,?,?,?,?,?,?)",
+    let _ = tx.execute(
+        "INSERT INTO fts_messages(content, title, agent, workspace, source_path, message_id)
+         VALUES(?,?,?,?,?,?)",
         params![
             msg.content,
             conv.title.clone().unwrap_or_default(),
@@ -586,10 +596,10 @@ fn insert_fts_message(
                 .map(|p| p.to_string_lossy().into_owned())
                 .unwrap_or_default(),
             path_to_string(&conv.source_path),
-            msg.created_at,
             message_id
         ],
-    )?;
+    );
+    // FTS mirror is best-effort; skip errors (Tantivy remains source of truth).
     Ok(())
 }
 

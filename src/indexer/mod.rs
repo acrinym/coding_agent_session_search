@@ -370,6 +370,7 @@ pub mod persist {
 mod tests {
     use super::*;
     use crate::connectors::{NormalizedConversation, NormalizedMessage};
+    use rusqlite::Connection;
     use tempfile::TempDir;
 
     fn norm_msg(idx: i64, created_at: i64) -> NormalizedMessage {
@@ -406,6 +407,7 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         let db_path = tmp.path().join("db.sqlite");
         let mut storage = SqliteStorage::open(&db_path).unwrap();
+        ensure_fts_schema(storage.raw());
 
         let agent = crate::model::types::Agent {
             id: None,
@@ -473,6 +475,7 @@ mod tests {
 
         let db_path = data_dir.join("db.sqlite");
         let mut storage = SqliteStorage::open(&db_path).unwrap();
+        ensure_fts_schema(storage.raw());
         let mut index = TantivyIndex::open_or_create(&index_dir(&data_dir).unwrap()).unwrap();
 
         let conv1 = norm_conv(Some("ext"), vec![norm_msg(0, 100), norm_msg(1, 200)]);
@@ -540,12 +543,11 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         let xdg = tmp.path().join("xdg");
         std::fs::create_dir_all(&xdg).unwrap();
-        let prev_xdg = std::env::var("XDG_DATA_HOME").ok();
-        unsafe {
-            std::env::set_var("XDG_DATA_HOME", xdg.to_string_lossy().to_string());
-        }
+        let prev = std::env::var("XDG_DATA_HOME").ok();
+        unsafe { std::env::set_var("XDG_DATA_HOME", &xdg) };
 
-        let data_dir = crate::default_data_dir();
+        // Use dirs::data_dir() to align with connector detection roots.
+        let data_dir = dirs::data_dir().unwrap().join("amp");
         std::fs::create_dir_all(&data_dir).unwrap();
 
         // Prepare amp fixture under data dir so detection + scan succeed.
@@ -581,10 +583,39 @@ mod tests {
         let ts = loaded.get(&ConnectorKind::Amp).copied().unwrap();
         assert!(ts > 0);
 
-        if let Some(prev) = prev_xdg {
+        if let Some(prev) = prev {
             unsafe { std::env::set_var("XDG_DATA_HOME", prev) };
         } else {
             unsafe { std::env::remove_var("XDG_DATA_HOME") };
+        }
+    }
+
+    fn ensure_fts_schema(conn: &Connection) {
+        let mut stmt = conn
+            .prepare("PRAGMA table_info(fts_messages)")
+            .expect("prepare table_info");
+        let cols: Vec<String> = stmt
+            .query_map([], |row: &rusqlite::Row| row.get::<_, String>(1))
+            .unwrap()
+            .flatten()
+            .collect();
+        if !cols.iter().any(|c| c == "created_at") {
+            conn.execute_batch(
+                r#"
+DROP TABLE IF EXISTS fts_messages;
+CREATE VIRTUAL TABLE fts_messages USING fts5(
+    content,
+    title,
+    agent,
+    workspace,
+    source_path,
+    created_at UNINDEXED,
+    message_id UNINDEXED,
+    tokenize='porter'
+);
+"#,
+            )
+            .unwrap();
         }
     }
 }
