@@ -39,10 +39,19 @@ fn install_easy_mode_end_to_end() {
     .unwrap();
     for f in [&"rustc", &"cargo", &"sha256sum"] {
         let p = fake_bin.join(f);
-        let mut perms = fs::metadata(&p).unwrap().permissions();
-        perms.set_readonly(false);
-        fs::set_permissions(&p, perms).unwrap();
-        Command::new("chmod").arg("+x").arg(&p).status().unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mut perms = fs::metadata(&p).unwrap().permissions();
+            perms.set_mode(0o755);
+            fs::set_permissions(&p, perms).unwrap();
+        }
+        #[cfg(windows)]
+        {
+            let mut perms = fs::metadata(&p).unwrap().permissions();
+            perms.set_readonly(false);
+            fs::set_permissions(&p, perms).unwrap();
+        }
     }
 
     let status = Command::new("timeout")
