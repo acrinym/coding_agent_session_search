@@ -62,3 +62,15 @@ opt-level = "z"
 targets = ["x86_64-unknown-linux-gnu"]
 installers = ["shell", "powershell"]
 ci = ["github"]
+
+[[bench]]
+name = "index_perf"
+harness = false
+
+[[bench]]
+name = "runtime_perf"
+harness = false
+
+[[bench]]
+name = "search_perf"
+harness = false
