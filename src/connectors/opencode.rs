@@ -78,7 +78,22 @@ impl Connector for OpenCodeConnector {
         let mut convs = Vec::new();
         let mut seen_ids = std::collections::HashSet::new();
 
-        for db_path in Self::find_dbs() {
+        let dbs = if ctx.data_root.exists() {
+            WalkDir::new(&ctx.data_root)
+                .into_iter()
+                .flatten()
+                .filter(|e| e.file_type().is_file())
+                .map(|e| e.path().to_path_buf())
+                .filter(|p| {
+                    let name = p.file_name().and_then(|n| n.to_str()).unwrap_or("");
+                    name.ends_with(".db") || name.ends_with(".sqlite")
+                })
+                .collect()
+        } else {
+            Self::find_dbs()
+        };
+
+        for db_path in dbs {
             let conn = match Connection::open(&db_path) {
                 Ok(c) => c,
                 Err(err) => {
