@@ -149,11 +149,12 @@ fn load_db(
     let rows = stmt.query_map([], |row| message_from_row(row, &msg_cols))?;
     for msg in rows {
         let msg = msg?;
-        if let Some(since) = since_ts
-            && let Some(ts) = msg.created_at
-            && ts <= since
-        {
-            continue;
+        if since_ts.is_some() {
+            if let (Some(since), Some(ts)) = (since_ts, msg.created_at) {
+                if ts <= since {
+                    continue;
+                }
+            }
         }
         if let Some(id) = msg.extra.get("session_id").and_then(|v| v.as_i64()) {
             by_session.entry(id).or_default().push(msg);
@@ -171,6 +172,12 @@ fn load_db(
             continue;
         }
         messages.sort_by_key(|m| m.created_at.unwrap_or(i64::MAX));
+        if let Some(since) = since_ts {
+            messages.retain(|m| m.created_at.map_or(false, |ts| ts > since));
+            if messages.is_empty() {
+                continue;
+            }
+        }
         for (i, msg) in messages.iter_mut().enumerate() {
             msg.idx = i as i64;
         }
@@ -220,6 +227,29 @@ fn load_db(
             metadata: serde_json::json!({"db_path": db_path}),
             messages: fallback_messages,
         });
+    }
+
+    // Apply since_ts post-filter to ensure late-binding still respects high-water mark.
+    if let Some(since) = since_ts {
+        let mut filtered = Vec::new();
+        for mut conv in convs {
+            let mut msgs: Vec<_> = conv
+                .messages
+                .into_iter()
+                .filter(|m| m.created_at.map_or(false, |ts| ts > since))
+                .collect();
+            if msgs.is_empty() {
+                continue;
+            }
+            for (i, m) in msgs.iter_mut().enumerate() {
+                m.idx = i as i64;
+            }
+            conv.messages = msgs;
+            conv.started_at = conv.messages.first().and_then(|m| m.created_at);
+            conv.ended_at = conv.messages.last().and_then(|m| m.created_at);
+            filtered.push(conv);
+        }
+        convs = filtered;
     }
 
     // Deduplicate external IDs in case multiple DBs share identifiers.

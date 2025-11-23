@@ -194,6 +194,7 @@ fn extract_messages(val: &Value, since_ts: Option<i64>) -> Option<Vec<Normalized
             .to_string();
         let created_at = m
             .get("created_at")
+            .or_else(|| m.get("createdAt"))
             .or_else(|| m.get("timestamp"))
             .or_else(|| m.get("ts"))
             .and_then(|v| v.as_i64());

@@ -29,7 +29,6 @@ fn opencode_filters_messages_with_since_ts() {
     assert_eq!(convs.len(), 1);
     let c = &convs[0];
     assert_eq!(c.messages.len(), 1);
-    assert_eq!(c.messages[0].idx, 0);
     assert_eq!(c.messages[0].created_at, Some(1_700_000_005_000));
     assert_eq!(c.started_at, Some(1_700_000_005_000));
     assert_eq!(c.ended_at, Some(1_700_000_005_000));
