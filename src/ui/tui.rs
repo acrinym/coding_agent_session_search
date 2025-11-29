@@ -1164,16 +1164,14 @@ fn dedupe_history_prefixes(history: Vec<String>) -> Vec<String> {
     let mut result: Vec<String> = Vec::with_capacity(history.len());
     for q in history {
         // Skip if this query is a strict prefix of any existing entry
-        let is_prefix_of_existing = result.iter().any(|existing| {
-            existing.starts_with(&q) && existing.len() > q.len()
-        });
+        let is_prefix_of_existing = result
+            .iter()
+            .any(|existing| existing.starts_with(&q) && existing.len() > q.len());
         if is_prefix_of_existing {
             continue;
         }
         // Remove any existing entries that are strict prefixes of this query
-        result.retain(|existing| {
-            !(q.starts_with(existing) && q.len() > existing.len())
-        });
+        result.retain(|existing| !(q.starts_with(existing) && q.len() > existing.len()));
         result.push(q);
     }
     result
@@ -1582,6 +1580,7 @@ pub fn run_tui(
     let mut last_terminal_height: u16 = initial_height;
     let mut page: usize = 0;
     let mut results: Vec<SearchHit> = Vec::new();
+    let mut wildcard_fallback: bool = false; // True when search used implicit wildcards
     let mut panes: Vec<AgentPane> = Vec::new();
     let mut active_pane: usize = 0;
     const MAX_VISIBLE_PANES: usize = 4;
@@ -1754,72 +1753,82 @@ pub fn run_tui(
                     let mut lines: Vec<Line> = Vec::new();
 
                     // Check if indexing is in progress - show prominent banner
-                    let indexing_active = progress.as_ref().map(|p| {
-                        get_indexing_state(p)
-                    });
+                    let indexing_active = progress.as_ref().map(get_indexing_state);
 
-                    if let Some((phase, current, total, is_rebuild, pct)) = indexing_active {
-                        if phase > 0 {
-                            // Show indexing banner
+                    if let Some((phase, current, total, is_rebuild, pct)) = indexing_active
+                        && phase > 0
+                    {
+                        // Show indexing banner
+                        lines.push(Line::from(""));
+                        if is_rebuild {
+                            lines.push(Line::from(vec![
+                                Span::styled("  ⚠ ", Style::default().fg(palette.system)),
+                                Span::styled(
+                                    "REBUILDING INDEX",
+                                    Style::default()
+                                        .fg(palette.system)
+                                        .add_modifier(Modifier::BOLD),
+                                ),
+                            ]));
                             lines.push(Line::from(""));
-                            if is_rebuild {
-                                lines.push(Line::from(vec![
-                                    Span::styled("  ⚠ ", Style::default().fg(palette.system)),
-                                    Span::styled(
-                                        "REBUILDING INDEX",
-                                        Style::default().fg(palette.system).add_modifier(Modifier::BOLD),
-                                    ),
-                                ]));
-                                lines.push(Line::from(""));
-                                lines.push(Line::from(Span::styled(
-                                    "  Search is unavailable during a full rebuild.",
-                                    Style::default().fg(palette.hint),
-                                )));
-                                lines.push(Line::from(Span::styled(
-                                    "  This typically takes 30-60 seconds.",
-                                    Style::default().fg(palette.hint),
-                                )));
-                            } else {
-                                let (icon, phase_label) = match phase {
-                                    1 => ("🔍", "Discovering sessions..."),
-                                    2 => ("📦", "Building search index..."),
-                                    _ => ("⏳", "Processing..."),
-                                };
-                                lines.push(Line::from(vec![
-                                    Span::styled(format!("  {} ", icon), Style::default()),
-                                    Span::styled(
-                                        phase_label,
-                                        Style::default().fg(palette.accent).add_modifier(Modifier::BOLD),
-                                    ),
-                                ]));
-                                lines.push(Line::from(""));
-                                // Progress bar
-                                let bar_width = 30;
-                                let filled = (pct * bar_width / 100).min(bar_width);
-                                let empty = bar_width - filled;
-                                lines.push(Line::from(vec![
-                                    Span::styled("  [", Style::default().fg(palette.border)),
-                                    Span::styled("█".repeat(filled), Style::default().fg(palette.accent)),
-                                    Span::styled("░".repeat(empty), Style::default().fg(palette.hint)),
-                                    Span::styled("]", Style::default().fg(palette.border)),
-                                    Span::styled(format!(" {}%", pct), Style::default().fg(palette.hint)),
-                                ]));
-                                lines.push(Line::from(""));
-                                lines.push(Line::from(Span::styled(
-                                    format!("  Processing {} of {} items", current, total),
-                                    Style::default().fg(palette.hint),
-                                )));
-                                lines.push(Line::from(Span::styled(
-                                    "  Search results will appear once indexing completes.",
-                                    Style::default().fg(palette.hint),
-                                )));
-                            }
+                            lines.push(Line::from(Span::styled(
+                                "  Search is unavailable during a full rebuild.",
+                                Style::default().fg(palette.hint),
+                            )));
+                            lines.push(Line::from(Span::styled(
+                                "  This typically takes 30-60 seconds.",
+                                Style::default().fg(palette.hint),
+                            )));
+                        } else {
+                            let (icon, phase_label) = match phase {
+                                1 => ("🔍", "Discovering sessions..."),
+                                2 => ("📦", "Building search index..."),
+                                _ => ("⏳", "Processing..."),
+                            };
+                            lines.push(Line::from(vec![
+                                Span::styled(format!("  {} ", icon), Style::default()),
+                                Span::styled(
+                                    phase_label,
+                                    Style::default()
+                                        .fg(palette.accent)
+                                        .add_modifier(Modifier::BOLD),
+                                ),
+                            ]));
                             lines.push(Line::from(""));
+                            // Progress bar
+                            let bar_width = 30;
+                            let filled = (pct * bar_width / 100).min(bar_width);
+                            let empty = bar_width - filled;
+                            lines.push(Line::from(vec![
+                                Span::styled("  [", Style::default().fg(palette.border)),
+                                Span::styled(
+                                    "█".repeat(filled),
+                                    Style::default().fg(palette.accent),
+                                ),
+                                Span::styled("░".repeat(empty), Style::default().fg(palette.hint)),
+                                Span::styled("]", Style::default().fg(palette.border)),
+                                Span::styled(
+                                    format!(" {}%", pct),
+                                    Style::default().fg(palette.hint),
+                                ),
+                            ]));
+                            lines.push(Line::from(""));
+                            lines.push(Line::from(Span::styled(
+                                format!("  Processing {} of {} items", current, total),
+                                Style::default().fg(palette.hint),
+                            )));
+                            lines.push(Line::from(Span::styled(
+                                "  Search results will appear once indexing completes.",
+                                Style::default().fg(palette.hint),
+                            )));
                         }
+                        lines.push(Line::from(""));
                     }
 
                     // Only show history/empty state if not indexing OR if indexing but user typed a query
-                    let show_normal_empty = indexing_active.map(|(phase, _, _, _, _)| phase == 0).unwrap_or(true)
+                    let show_normal_empty = indexing_active
+                        .map(|(phase, _, _, _, _)| phase == 0)
+                        .unwrap_or(true)
                         || !query.trim().is_empty();
 
                     if show_normal_empty {
@@ -2012,7 +2021,8 @@ pub fn run_tui(
                     if let Some(prog) = &progress {
                         let (phase, _, _, _, pct) = get_indexing_state(prog);
                         if phase > 0 {
-                            let indicator = format!(" ⚠ Indexing {}% - results may be incomplete ", pct);
+                            let indicator =
+                                format!(" ⚠ Indexing {}% - results may be incomplete ", pct);
                             let indicator_span = Span::styled(
                                 indicator.clone(),
                                 Style::default()
@@ -2022,7 +2032,9 @@ pub fn run_tui(
                             // Render in top-right corner of results area
                             let indicator_area = Rect::new(
                                 results_area.x
-                                    + results_area.width.saturating_sub(indicator.len() as u16 + 1),
+                                    + results_area
+                                        .width
+                                        .saturating_sub(indicator.len() as u16 + 1),
                                 results_area.y,
                                 indicator.len() as u16,
                                 1,
@@ -2259,6 +2271,9 @@ pub fn run_tui(
                     RankingMode::RecentHeavy => footer_parts.push("rank:recent".to_string()),
                     RankingMode::RelevanceHeavy => footer_parts.push("rank:relevance".to_string()),
                     RankingMode::Balanced => {}
+                }
+                if wildcard_fallback {
+                    footer_parts.push("✱ fuzzy".to_string());
                 }
                 if !matches!(context_window, ContextWindow::Medium) {
                     footer_parts.push(
@@ -3450,8 +3465,12 @@ pub fn run_tui(
                         .or_else(|| panes.get(active_pane).map(|p| p.agent.clone()));
                     let prev_path = active_hit(&panes, active_pane).map(|h| h.source_path.clone());
                     let q = apply_match_mode(&query, match_mode);
-                    match client.search(&q, filters.clone(), page_size, page * page_size) {
-                        Ok(hits) => {
+                    // Use search_with_fallback for implicit wildcard expansion on sparse results
+                    const SPARSE_THRESHOLD: usize = 3;
+                    match client.search_with_fallback(&q, filters.clone(), page_size, page * page_size, SPARSE_THRESHOLD) {
+                        Ok(search_result) => {
+                            let hits = search_result.hits;
+                            wildcard_fallback = search_result.wildcard_fallback;
                             dirty_since = None;
                             if hits.is_empty() && page > 0 {
                                 page = page.saturating_sub(1);
@@ -3567,7 +3586,9 @@ pub fn run_tui(
         // Mark that user has seen (or had opportunity to see) the help overlay
         has_seen_help: Some(true),
         // Persist query history for next session, deduplicating prefix pollution
-        query_history: Some(dedupe_history_prefixes(query_history.iter().cloned().collect())),
+        query_history: Some(dedupe_history_prefixes(
+            query_history.iter().cloned().collect(),
+        )),
     };
     save_state(&state_path, &persisted_out);
 

@@ -43,6 +43,15 @@ pub struct SearchHit {
     pub line_number: Option<usize>,
 }
 
+/// Result of a search operation with metadata about how matches were found
+#[derive(Debug, Clone)]
+pub struct SearchResult {
+    /// The search results
+    pub hits: Vec<SearchHit>,
+    /// Whether wildcard fallback was used (query had no/few exact matches)
+    pub wildcard_fallback: bool,
+}
+
 pub struct SearchClient {
     reader: Option<(IndexReader, crate::search::tantivy::Fields)>,
     sqlite: Option<Connection>,
@@ -442,6 +451,63 @@ impl SearchClient {
 
         tracing::info!(backend = "none", query = query, "search_start");
         Ok(Vec::new())
+    }
+
+    /// Search with automatic wildcard fallback for sparse results.
+    /// If the initial search returns fewer than `sparse_threshold` results and the query
+    /// doesn't already contain wildcards, automatically retry with substring wildcards (*term*).
+    pub fn search_with_fallback(
+        &self,
+        query: &str,
+        filters: SearchFilters,
+        limit: usize,
+        offset: usize,
+        sparse_threshold: usize,
+    ) -> Result<SearchResult> {
+        // First, try the normal search
+        let hits = self.search(query, filters.clone(), limit, offset)?;
+
+        // Check if we should try wildcard fallback
+        let query_has_wildcards = query.contains('*');
+        let is_sparse = hits.len() < sparse_threshold && offset == 0;
+
+        if !is_sparse || query_has_wildcards || query.trim().is_empty() {
+            // Either we have enough results, query already has wildcards, or query is empty
+            return Ok(SearchResult {
+                hits,
+                wildcard_fallback: false,
+            });
+        }
+
+        // Try wildcard fallback: wrap each term in *term*
+        let wildcard_query = query
+            .split_whitespace()
+            .map(|term| format!("*{}*", term.trim_matches('*')))
+            .collect::<Vec<_>>()
+            .join(" ");
+
+        tracing::info!(
+            original_query = query,
+            wildcard_query = wildcard_query,
+            original_count = hits.len(),
+            "wildcard_fallback"
+        );
+
+        let fallback_hits = self.search(&wildcard_query, filters, limit, offset)?;
+
+        // Use fallback results if they're better
+        if fallback_hits.len() > hits.len() {
+            Ok(SearchResult {
+                hits: fallback_hits,
+                wildcard_fallback: true,
+            })
+        } else {
+            // Keep original results even if sparse
+            Ok(SearchResult {
+                hits,
+                wildcard_fallback: false,
+            })
+        }
     }
 
     fn searcher_for_thread(&self, reader: &IndexReader) -> Searcher {
