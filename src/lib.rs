@@ -1167,10 +1167,10 @@ fn render_schema_docs() -> Vec<String> {
             let ty = type_of(v);
             let pad = "  ".repeat(indent);
             lines.push(format!("{pad}- {k}: {ty}"));
-            if depth < 2 {
-                if let Some(obj) = v.get("properties").and_then(Value::as_object) {
-                    render_props(lines, obj, indent + 1, depth + 1);
-                }
+            if depth < 2
+                && let Some(obj) = v.get("properties").and_then(Value::as_object)
+            {
+                render_props(lines, obj, indent + 1, depth + 1);
             }
         }
     }

@@ -7,7 +7,7 @@ use ratatui::widgets::{Block, Paragraph};
 
 use crate::search::query::SearchFilters;
 use crate::ui::components::theme::ThemePalette;
-use crate::ui::tui::{self, RankingMode, format_time_short};
+use crate::ui::tui;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum BreadcrumbKind {
@@ -118,7 +118,11 @@ pub fn render_breadcrumbs(
         (None, None) => "Any time".to_string(),
         (Some(f), None) => format!("Since {}", tui::format_time_short(f)),
         (None, Some(t)) => format!("Until {}", tui::format_time_short(t)),
-        (Some(f), Some(t)) => format!("{} - {}", tui::format_time_short(f), tui::format_time_short(t)),
+        (Some(f), Some(t)) => format!(
+            "{} - {}",
+            tui::format_time_short(f),
+            tui::format_time_short(t)
+        ),
     };
     let date_style = if filters.created_from.is_none() && filters.created_to.is_none() {
         Style::default().fg(palette.hint)

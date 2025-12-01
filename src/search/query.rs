@@ -213,7 +213,7 @@ static CACHE_SHARD_CAP: Lazy<usize> = Lazy::new(|| {
         .unwrap_or(256)
 });
 
-// Total cache cost across all shards; approximate “~2k entries” default.
+// Total cache cost across all shards; approximate "~2k entries" default.
 static CACHE_TOTAL_CAP: Lazy<usize> = Lazy::new(|| {
     std::env::var("CASS_CACHE_TOTAL_CAP")
         .ok()

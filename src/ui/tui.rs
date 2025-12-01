@@ -1,4 +1,4 @@
-/// Ratatui-based interface wired to Tantivy search.
+//! Ratatui-based interface wired to Tantivy search.
 
 use anyhow::Result;
 use chrono::{DateTime, Datelike, Utc};
@@ -36,7 +36,6 @@ use crate::ui::components::theme::ThemePalette;
 use crate::ui::components::widgets::search_bar;
 use crate::ui::data::{ConversationView, InputMode, load_conversation, role_style};
 use crate::ui::shortcuts;
-use crate::ui::time_parser::parse_time_input;
 use crate::update_check::{UpdateInfo, open_in_browser, skip_version, spawn_update_check};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -2138,8 +2137,6 @@ fn render_inline_markdown_line(
     Line::from(spans)
 }
 
-
-
 fn quick_date_range_today() -> Option<(i64, i64)> {
     use chrono::{Datelike, Local, TimeZone};
     let now = Local::now();
@@ -3551,6 +3548,33 @@ pub fn run_tui(
                 } else {
                     // Clear help line when hidden
                     f.render_widget(Paragraph::new(""), footer_split[2]);
+                }
+
+                // Render autocomplete dropdown for Agent Filter
+                if input_mode == InputMode::Agent {
+                    let suggestions = agent_suggestions(&input_buffer);
+                    if !suggestions.is_empty() {
+                        let area = Rect::new(
+                            chunks[0].x + 14, // Align with " Filter: Agent " prompt
+                            chunks[0].y + 2,  // Below title line
+                            30,
+                            (suggestions.len().min(5) as u16) + 2,
+                        );
+                        f.render_widget(ratatui::widgets::Clear, area);
+                        let items: Vec<ListItem> = suggestions
+                            .iter()
+                            .map(|s| ListItem::new(Span::raw(*s)))
+                            .collect();
+                        let list = List::new(items)
+                            .block(
+                                Block::default()
+                                    .borders(Borders::ALL)
+                                    .border_style(palette.border_focus_style())
+                                    .title("Suggestions"),
+                            )
+                            .highlight_style(Style::default().bg(palette.accent));
+                        f.render_widget(list, area);
+                    }
                 }
 
                 // Update available banner (bead 018)
@@ -6108,8 +6132,6 @@ mod tests {
         assert_eq!(loaded.query_history.as_ref().map(|v| v.len()), Some(2));
         assert_eq!(loaded.saved_views.as_ref().map(|v| v.len()), Some(1));
     }
-
-
 
     #[test]
     fn contextual_snippet_handles_multibyte_and_short_text() {
