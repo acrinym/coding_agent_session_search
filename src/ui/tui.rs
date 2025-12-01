@@ -1,4 +1,4 @@
-//! Ratatui-based interface wired to Tantivy search.
+/// Ratatui-based interface wired to Tantivy search.
 
 use anyhow::Result;
 use chrono::{DateTime, Datelike, Utc};
@@ -36,6 +36,7 @@ use crate::ui::components::theme::ThemePalette;
 use crate::ui::components::widgets::search_bar;
 use crate::ui::data::{ConversationView, InputMode, load_conversation, role_style};
 use crate::ui::shortcuts;
+use crate::ui::time_parser::parse_time_input;
 use crate::update_check::{UpdateInfo, open_in_browser, skip_version, spawn_update_check};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -43,6 +44,35 @@ enum DetailTab {
     Messages,
     Snippets,
     Raw,
+}
+
+/// Format a timestamp as a short human-readable date for filter chips.
+/// Shows "Nov 25" for same year, "Nov 25, 2023" for other years.
+pub fn format_time_short(ms: i64) -> String {
+    let now = Utc::now();
+    DateTime::<Utc>::from_timestamp_millis(ms)
+        .map(|dt| {
+            if dt.year() == now.year() {
+                dt.format("%b %d").to_string() // "Nov 25"
+            } else {
+                dt.format("%b %d, %Y").to_string() // "Nov 25, 2023"
+            }
+        })
+        .unwrap_or_else(|| "?".to_string())
+}
+
+/// Format time filter range as readable chip text.
+fn format_time_chip(from: Option<i64>, to: Option<i64>) -> String {
+    match (from, to) {
+        (Some(f), Some(t)) => format!(
+            "[time: {} → {}]",
+            format_time_short(f),
+            format_time_short(t)
+        ),
+        (Some(f), None) => format!("[time: {} → now]", format_time_short(f)),
+        (None, Some(t)) => format!("[time: start → {}]", format_time_short(t)),
+        (None, None) => String::new(),
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -2108,130 +2138,7 @@ fn render_inline_markdown_line(
     Line::from(spans)
 }
 
-/// Format a timestamp as a short human-readable date for filter chips.
-/// Shows "Nov 25" for same year, "Nov 25, 2023" for other years.
-pub fn format_time_short(ms: i64) -> String {
-    let now = Utc::now();
-    DateTime::<Utc>::from_timestamp_millis(ms)
-        .map(|dt| {
-            if dt.year() == now.year() {
-                dt.format("%b %d").to_string() // "Nov 25"
-            } else {
-                dt.format("%b %d, %Y").to_string() // "Nov 25, 2023"
-            }
-        })
-        .unwrap_or_else(|| "?".to_string())
-}
 
-/// Format time filter range as readable chip text.
-fn format_time_chip(from: Option<i64>, to: Option<i64>) -> String {
-    match (from, to) {
-        (Some(f), Some(t)) => format!(
-            "[time: {} → {}]",
-            format_time_short(f),
-            format_time_short(t)
-        ),
-        (Some(f), None) => format!("[time: {} → now]", format_time_short(f)),
-        (None, Some(t)) => format!("[time: start → {}]", format_time_short(t)),
-        (None, None) => String::new(),
-    }
-}
-
-/// Parse human-readable time input into milliseconds since epoch.
-///
-/// Accepts multiple formats:
-/// - Relative: `-7d` (7 days ago), `-24h` (24 hours), `-1w` (1 week), `-30m` (30 minutes)
-/// - Keywords: `yesterday`, `today`, `now`
-/// - ISO dates: `2024-11-25`, `2024-11-25T14:30:00`
-/// - Numeric: milliseconds if >= 10^12, otherwise seconds
-///
-/// Returns None if the input cannot be parsed.
-fn parse_time_input(input: &str) -> Option<i64> {
-    let input = input.trim().to_lowercase();
-    if input.is_empty() {
-        return None;
-    }
-
-    let now = Utc::now();
-    let now_ms = now.timestamp_millis();
-
-    // Relative time formats: -7d, -24h, -1w, -30m
-    if let Some(rest) = input.strip_prefix('-') {
-        if let Some((num_str, unit)) = rest
-            .char_indices()
-            .find(|(_, c)| c.is_alphabetic())
-            .map(|(i, _)| (&rest[..i], &rest[i..]))
-            && let Ok(num) = num_str.parse::<i64>()
-        {
-            let ms_per_unit = match unit {
-                "m" | "min" | "mins" | "minute" | "minutes" => 60 * 1000,
-                "h" | "hr" | "hrs" | "hour" | "hours" => 60 * 60 * 1000,
-                "d" | "day" | "days" => 24 * 60 * 60 * 1000,
-                "w" | "wk" | "wks" | "week" | "weeks" => 7 * 24 * 60 * 60 * 1000,
-                _ => return None,
-            };
-            return Some(now_ms - num * ms_per_unit);
-        }
-        return None;
-    }
-
-    // Keyword shortcuts
-    match input.as_str() {
-        "now" => return Some(now_ms),
-        "today" => {
-            let start_of_today = now.date_naive().and_hms_opt(0, 0, 0)?;
-            return Some(start_of_today.and_utc().timestamp_millis());
-        }
-        "yesterday" => {
-            let yesterday = now.date_naive().pred_opt()?.and_hms_opt(0, 0, 0)?;
-            return Some(yesterday.and_utc().timestamp_millis());
-        }
-        _ => {}
-    }
-
-    // Try ISO date formats
-    // Full ISO-8601 with time: 2024-11-25T14:30:00Z or 2024-11-25T14:30:00
-    if let Ok(dt) = chrono::DateTime::parse_from_rfc3339(&input) {
-        return Some(dt.timestamp_millis());
-    }
-    if let Ok(dt) = chrono::NaiveDateTime::parse_from_str(&input, "%Y-%m-%dT%H:%M:%S") {
-        return Some(dt.and_utc().timestamp_millis());
-    }
-    if let Ok(dt) = chrono::NaiveDateTime::parse_from_str(&input, "%Y-%m-%d %H:%M:%S") {
-        return Some(dt.and_utc().timestamp_millis());
-    }
-
-    // Date only: 2024-11-25 -> start of that day
-    if let Ok(date) = chrono::NaiveDate::parse_from_str(&input, "%Y-%m-%d") {
-        let dt = date.and_hms_opt(0, 0, 0)?;
-        return Some(dt.and_utc().timestamp_millis());
-    }
-
-    // Short date formats: 11/25/2024 or 11-25-2024
-    if let Ok(date) = chrono::NaiveDate::parse_from_str(&input, "%m/%d/%Y") {
-        let dt = date.and_hms_opt(0, 0, 0)?;
-        return Some(dt.and_utc().timestamp_millis());
-    }
-    if let Ok(date) = chrono::NaiveDate::parse_from_str(&input, "%m-%d-%Y") {
-        let dt = date.and_hms_opt(0, 0, 0)?;
-        return Some(dt.and_utc().timestamp_millis());
-    }
-
-    // Numeric: try parsing as number
-    if let Ok(n) = input.parse::<i64>() {
-        // Heuristic: timestamps >= 10^12 are milliseconds, otherwise seconds
-        // (10^12 ms = Sep 2001, reasonable cutoff)
-        if n >= 1_000_000_000_000 {
-            return Some(n); // Already milliseconds
-        } else if n >= 1_000_000_000 {
-            return Some(n * 1000); // Convert seconds to milliseconds
-        }
-        // Small numbers are probably not valid timestamps
-        return None;
-    }
-
-    None
-}
 
 fn quick_date_range_today() -> Option<(i64, i64)> {
     use chrono::{Datelike, Local, TimeZone};
@@ -5656,7 +5563,7 @@ pub fn run_tui(
                         status = "From timestamp cancelled".to_string();
                     }
                     KeyCode::Enter => {
-                        let parsed = parse_time_input(&input_buffer);
+                        let parsed = crate::ui::time_parser::parse_time_input(&input_buffer);
                         if parsed.is_some() || input_buffer.trim().is_empty() {
                             filters.created_from = parsed;
                             page = 0;
@@ -5692,7 +5599,7 @@ pub fn run_tui(
                         status = "To timestamp cancelled".to_string();
                     }
                     KeyCode::Enter => {
-                        let parsed = parse_time_input(&input_buffer);
+                        let parsed = crate::ui::time_parser::parse_time_input(&input_buffer);
                         if parsed.is_some() || input_buffer.trim().is_empty() {
                             filters.created_to = parsed;
                             page = 0;
@@ -6211,43 +6118,7 @@ mod tests {
         assert_eq!(loaded.saved_views.as_ref().map(|v| v.len()), Some(1));
     }
 
-    #[test]
-    fn parse_time_input_handles_various_formats() {
-        // Relative time formats
-        let now_ms = Utc::now().timestamp_millis();
 
-        // -7d should be ~7 days ago (within 1 minute tolerance for test duration)
-        let seven_days_ago = parse_time_input("-7d").unwrap();
-        let expected_7d = now_ms - 7 * 24 * 60 * 60 * 1000;
-        assert!((seven_days_ago - expected_7d).abs() < 60000);
-
-        // -24h should be ~24 hours ago
-        let day_ago = parse_time_input("-24h").unwrap();
-        let expected_24h = now_ms - 24 * 60 * 60 * 1000;
-        assert!((day_ago - expected_24h).abs() < 60000);
-
-        // Keyword shortcuts
-        assert!(parse_time_input("now").is_some());
-        assert!(parse_time_input("today").is_some());
-        assert!(parse_time_input("yesterday").is_some());
-
-        // ISO date format
-        let iso_date = parse_time_input("2024-11-25").unwrap();
-        assert!(iso_date > 0);
-
-        // Numeric timestamp (seconds)
-        let ts_seconds = parse_time_input("1732500000").unwrap();
-        assert_eq!(ts_seconds, 1732500000000); // Converted to ms
-
-        // Numeric timestamp (milliseconds)
-        let ts_ms = parse_time_input("1732500000000").unwrap();
-        assert_eq!(ts_ms, 1732500000000);
-
-        // Invalid input returns None
-        assert!(parse_time_input("invalid").is_none());
-        assert!(parse_time_input("").is_none());
-        assert!(parse_time_input("-xyz").is_none());
-    }
 
     #[test]
     fn contextual_snippet_handles_multibyte_and_short_text() {
