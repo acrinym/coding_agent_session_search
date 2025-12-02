@@ -226,6 +226,9 @@ pub enum Commands {
         /// Timeout in milliseconds. Returns partial results and error if exceeded.
         #[arg(long)]
         timeout: Option<u64>,
+        /// Highlight matching terms in output (uses **bold** markers in text, <mark> in HTML)
+        #[arg(long)]
+        highlight: bool,
     },
     /// Show statistics about indexed data
     Stats {
@@ -256,6 +259,9 @@ pub enum Commands {
         /// Output as JSON (default for robot consumption)
         #[arg(long)]
         json: bool,
+        /// Include _meta block (elapsed, freshness, data_dir/db_path)
+        #[arg(long, default_value_t = false)]
+        robot_meta: bool,
         /// Staleness threshold in seconds (default: 1800 = 30 minutes)
         #[arg(long, default_value_t = 1800)]
         stale_threshold: u64,
@@ -274,6 +280,9 @@ pub enum Commands {
         /// Output as JSON (default for robot consumption)
         #[arg(long)]
         json: bool,
+        /// Include _meta block (elapsed, freshness, data_dir/db_path)
+        #[arg(long, default_value_t = false)]
+        robot_meta: bool,
         /// Staleness threshold in seconds (default: 1800 = 30 minutes)
         #[arg(long, default_value_t = 1800)]
         stale_threshold: u64,
@@ -312,6 +321,9 @@ pub enum Commands {
         /// Output as JSON (`{"healthy": bool, "latency_ms": N}`)
         #[arg(long)]
         json: bool,
+        /// Include _meta block (elapsed, freshness, data_dir/db_path)
+        #[arg(long, default_value_t = false)]
+        robot_meta: bool,
         /// Staleness threshold in seconds (default: 300)
         #[arg(long, default_value = "300")]
         stale_threshold: u64,
@@ -329,6 +341,58 @@ pub enum Commands {
         /// Maximum results per relation type (default: 5)
         #[arg(long, default_value_t = 5)]
         limit: usize,
+    },
+    /// Export a conversation to markdown or other formats
+    Export {
+        /// Path to session file
+        path: PathBuf,
+        /// Output format
+        #[arg(long, value_enum, default_value_t = ConvExportFormat::Markdown)]
+        format: ConvExportFormat,
+        /// Output file (stdout if not specified)
+        #[arg(long, short = 'o')]
+        output: Option<PathBuf>,
+        /// Include tool use details in export
+        #[arg(long)]
+        include_tools: bool,
+    },
+    /// Show messages around a specific line in a session file
+    Expand {
+        /// Path to session file
+        path: PathBuf,
+        /// Line number to show context around
+        #[arg(long, short = 'n')]
+        line: usize,
+        /// Number of messages before/after (default: 3)
+        #[arg(long, short = 'C', default_value_t = 3)]
+        context: usize,
+        /// Output as JSON
+        #[arg(long)]
+        json: bool,
+    },
+    /// Show activity timeline for a time range
+    Timeline {
+        /// Start time (ISO date, 'today', 'yesterday', 'Nd' for N days ago)
+        #[arg(long)]
+        since: Option<String>,
+        /// End time (ISO date or relative)
+        #[arg(long)]
+        until: Option<String>,
+        /// Show today only
+        #[arg(long)]
+        today: bool,
+        /// Filter by agent (can be repeated)
+        #[arg(long)]
+        agent: Vec<String>,
+        /// Override data dir
+        #[arg(long)]
+        data_dir: Option<PathBuf>,
+        /// Output as JSON
+        #[arg(long)]
+        json: bool,
+        /// Group by: hour, day, or none
+        #[arg(long, value_enum, default_value_t = TimelineGrouping::Hour)]
+        group_by: TimelineGrouping,
     },
 }
 
@@ -382,6 +446,32 @@ pub enum DisplayFormat {
     Lines,
     /// Markdown with role headers and code blocks
     Markdown,
+}
+
+/// Conversation export format (for export command)
+#[derive(Copy, Clone, Debug, Default, ValueEnum, PartialEq, Eq)]
+pub enum ConvExportFormat {
+    /// Markdown with headers and formatting
+    #[default]
+    Markdown,
+    /// Plain text
+    Text,
+    /// JSON array of messages
+    Json,
+    /// HTML with styling
+    Html,
+}
+
+/// Timeline grouping options
+#[derive(Copy, Clone, Debug, Default, ValueEnum, PartialEq, Eq)]
+pub enum TimelineGrouping {
+    /// Group by hour
+    #[default]
+    Hour,
+    /// Group by day
+    Day,
+    /// No grouping (flat list)
+    None,
 }
 
 /// Aggregation field types for --aggregate flag
@@ -1494,6 +1584,7 @@ async fn execute_cli(
                     explain,
                     dry_run,
                     timeout,
+                    highlight,
                 } => {
                     run_cli_search(
                         &query,
@@ -1514,6 +1605,7 @@ async fn execute_cli(
                         cli.db.clone(),
                         wrap,
                         progress,
+                        robot_mode,
                         TimeFilter::new(
                             days,
                             today,
@@ -1526,6 +1618,7 @@ async fn execute_cli(
                         explain,
                         dry_run,
                         timeout,
+                        highlight,
                     )?;
                 }
                 Commands::Stats { data_dir, json } => {
@@ -1541,9 +1634,10 @@ async fn execute_cli(
                 Commands::Status {
                     data_dir,
                     json,
+                    robot_meta,
                     stale_threshold,
                 } => {
-                    run_status(&data_dir, cli.db.clone(), json, stale_threshold)?;
+                    run_status(&data_dir, cli.db.clone(), json, stale_threshold, robot_meta)?;
                 }
                 Commands::View {
                     path,
@@ -1551,7 +1645,7 @@ async fn execute_cli(
                     context,
                     json,
                 } => {
-                    run_view(&path, line, context, json)?;
+                    run_view(&path, line, context, json || robot_mode)?;
                 }
                 _ => {}
             }
@@ -1588,9 +1682,10 @@ async fn execute_cli(
                 Commands::State {
                     data_dir,
                     json,
+                    robot_meta,
                     stale_threshold,
                 } => {
-                    run_status(&data_dir, None, json, stale_threshold)?;
+                    run_status(&data_dir, None, json, stale_threshold, robot_meta)?;
                 }
                 Commands::Introspect { json } => {
                     run_introspect(json)?;
@@ -1598,9 +1693,10 @@ async fn execute_cli(
                 Commands::Health {
                     data_dir,
                     json,
+                    robot_meta,
                     stale_threshold,
                 } => {
-                    run_health(&data_dir, cli.db.clone(), json, stale_threshold)?;
+                    run_health(&data_dir, cli.db.clone(), json, stale_threshold, robot_meta)?;
                 }
                 Commands::Context {
                     path,
@@ -1609,6 +1705,42 @@ async fn execute_cli(
                     limit,
                 } => {
                     run_context(&path, &data_dir, cli.db.clone(), json, limit)?;
+                }
+                Commands::Export {
+                    path,
+                    format,
+                    output,
+                    include_tools,
+                } => {
+                    run_export(&path, format, output.as_deref(), include_tools)?;
+                }
+                Commands::Expand {
+                    path,
+                    line,
+                    context,
+                    json,
+                } => {
+                    run_expand(&path, line, context, json)?;
+                }
+                Commands::Timeline {
+                    since,
+                    until,
+                    today,
+                    agent,
+                    data_dir,
+                    json,
+                    group_by,
+                } => {
+                    run_timeline(
+                        since.as_deref(),
+                        until.as_deref(),
+                        today,
+                        &agent,
+                        &data_dir,
+                        cli.db.clone(),
+                        json,
+                        group_by,
+                    )?;
                 }
                 _ => {}
             }
@@ -1766,6 +1898,9 @@ fn describe_command(cli: &Cli) -> String {
         Some(Commands::RobotDocs { topic }) => format!("robot-docs:{topic:?}"),
         Some(Commands::Health { .. }) => "health".to_string(),
         Some(Commands::Context { .. }) => "context".to_string(),
+        Some(Commands::Export { .. }) => "export".to_string(),
+        Some(Commands::Expand { .. }) => "expand".to_string(),
+        Some(Commands::Timeline { .. }) => "timeline".to_string(),
         None => "(default)".to_string(),
     }
 }
@@ -1820,6 +1955,121 @@ fn apply_wrap(line: &str, wrap: WrapConfig) -> String {
         out.push_str(current.trim_end());
     }
     out
+}
+
+/// Highlight matching search terms in text
+///
+/// Extracts query terms and wraps matches with the specified markers.
+/// Uses case-insensitive matching. Handles quoted phrases and individual terms.
+///
+/// # Arguments
+/// * `text` - The text to highlight matches in
+/// * `query` - The search query to extract terms from
+/// * `start_mark` - Opening marker (e.g., "**" for markdown bold, "<mark>" for HTML)
+/// * `end_mark` - Closing marker (e.g., "**" for markdown bold, "</mark>" for HTML)
+fn highlight_matches(text: &str, query: &str, start_mark: &str, end_mark: &str) -> String {
+    // Extract search terms from query (handles quoted phrases and individual words)
+    let terms = extract_search_terms(query);
+    if terms.is_empty() {
+        return text.to_string();
+    }
+
+    // Sort terms by length (longest first) to avoid partial matches
+    let mut terms: Vec<_> = terms.into_iter().collect();
+    terms.sort_by(|a, b| b.len().cmp(&a.len()));
+
+    let mut result = text.to_string();
+    for term in &terms {
+        if term.is_empty() {
+            continue;
+        }
+        // Case-insensitive replacement
+        // Note: We lowercase both and find matches in the lowercased version,
+        // but the matched substring length in the original might differ from term.len()
+        // for certain Unicode characters. We use the actual matched length from lower_result.
+        let lower_result = result.to_lowercase();
+        let lower_term = term.to_lowercase();
+        let mut new_result = String::new();
+        let mut last_end = 0;
+
+        for (idx, matched_str) in lower_result.match_indices(&lower_term) {
+            // Skip if this overlaps with a previous highlight (from a longer term)
+            if idx < last_end {
+                continue;
+            }
+            // Append text before this match
+            new_result.push_str(&result[last_end..idx]);
+            // Append highlighted match (preserve original case)
+            // Use matched_str.len() which is the actual byte length in the lowercased string
+            new_result.push_str(start_mark);
+            new_result.push_str(&result[idx..idx + matched_str.len()]);
+            new_result.push_str(end_mark);
+            last_end = idx + matched_str.len();
+        }
+        // Append remaining text
+        new_result.push_str(&result[last_end..]);
+        result = new_result;
+    }
+
+    result
+}
+
+/// Extract meaningful search terms from a query string
+///
+/// Handles:
+/// - Quoted phrases: "exact phrase" -> ["exact phrase"]
+/// - Regular words: word -> ["word"]
+/// - Field filters: agent:claude -> ignored (filter, not content term)
+/// - Operators: AND, OR, NOT -> ignored
+fn extract_search_terms(query: &str) -> Vec<String> {
+    let mut terms = Vec::new();
+    let mut chars = query.chars().peekable();
+
+    while let Some(c) = chars.next() {
+        if c == '"' {
+            // Quoted phrase
+            let mut phrase = String::new();
+            while let Some(&next) = chars.peek() {
+                if next == '"' {
+                    chars.next();
+                    break;
+                }
+                phrase.push(chars.next().unwrap());
+            }
+            if !phrase.is_empty() {
+                terms.push(phrase);
+            }
+        } else if c.is_alphanumeric() || c == '_' || c == '-' {
+            // Word (might be a field filter like agent:foo)
+            let mut word = String::from(c);
+            while let Some(&next) = chars.peek() {
+                if next.is_alphanumeric() || next == '_' || next == '-' {
+                    word.push(chars.next().unwrap());
+                } else if next == ':' {
+                    // This is a field filter - skip the whole thing
+                    chars.next(); // consume ':'
+                    while let Some(&n) = chars.peek() {
+                        if n.is_whitespace() {
+                            break;
+                        }
+                        chars.next();
+                    }
+                    word.clear();
+                    break;
+                } else {
+                    break;
+                }
+            }
+            // Ignore operators
+            let upper = word.to_uppercase();
+            if !word.is_empty() && upper != "AND" && upper != "OR" && upper != "NOT" {
+                terms.push(word);
+            }
+        }
+        // Skip whitespace and other characters
+    }
+
+    terms
 }
 
 fn render_block<T: AsRef<str>>(lines: &[T], wrap: WrapConfig) -> String {
@@ -2266,11 +2516,13 @@ fn run_cli_search(
     db_override: Option<PathBuf>,
     wrap: WrapConfig,
     _progress: ProgressResolved,
+    robot_auto: bool,
     time_filter: TimeFilter,
     aggregate: Option<Vec<String>>,
     explain: bool,
     dry_run: bool,
     timeout_ms: Option<u64>,
+    highlight: bool,
 ) -> CliResult<()> {
     use crate::search::query::{QueryExplanation, SearchClient, SearchFilters};
     use crate::search::tantivy::index_dir;
@@ -2350,7 +2602,9 @@ fn run_cli_search(
 
     // Determine the effective output format
     // Priority: robot_format > json flag > display format > default plain
-    let effective_robot = robot_format.or(if *json { Some(RobotFormat::Json) } else { None });
+    let effective_robot = robot_format
+        .or(if *json { Some(RobotFormat::Json) } else { None })
+        .or_else(|| if robot_auto { Some(RobotFormat::Json) } else { None });
 
     // Parse aggregate fields if provided
     let agg_fields = aggregate
@@ -2589,7 +2843,7 @@ fn run_cli_search(
         eprintln!("No results found.");
     } else if let Some(display) = display_format {
         // Human-readable display formats
-        output_display_results(&display_result.hits, display, wrap)?;
+        output_display_results(&display_result.hits, display, wrap, query, highlight)?;
     } else {
         // Default plain text output
         for hit in &display_result.hits {
@@ -2600,6 +2854,11 @@ fn run_cli_search(
             );
             println!("Path: {}", hit.source_path);
             let snippet = hit.snippet.replace('\n', " ");
+            let snippet = if highlight {
+                highlight_matches(&snippet, query, "**", "**")
+            } else {
+                snippet
+            };
             println!("Snippet: {}", apply_wrap(&snippet, wrap));
         }
         println!("----------------------------------------------------------------");
@@ -2613,6 +2872,8 @@ fn output_display_results(
     hits: &[crate::search::query::SearchHit],
     format: DisplayFormat,
     wrap: WrapConfig,
+    query: &str,
+    highlight: bool,
 ) -> CliResult<()> {
     match format {
         DisplayFormat::Table => {
@@ -2622,6 +2883,11 @@ fn output_display_results(
             for hit in hits {
                 let workspace = truncate_start(&hit.workspace, 24);
                 let snippet = hit.snippet.replace('\n', " ");
+                let snippet = if highlight {
+                    highlight_matches(&snippet, query, "**", "**")
+                } else {
+                    snippet
+                };
                 let snippet_display = truncate_end(&snippet, 50);
                 println!(
                     "{:<6.2} {:<12} {:<25} {}",
@@ -2634,6 +2900,11 @@ fn output_display_results(
             // One-liner per result
             for hit in hits {
                 let snippet = hit.snippet.replace('\n', " ");
+                let snippet = if highlight {
+                    highlight_matches(&snippet, query, "**", "**")
+                } else {
+                    snippet
+                };
                 let snippet_short = truncate_end(&snippet, 60);
                 println!(
                     "[{:.1}] {} | {} | {}",
@@ -2656,7 +2927,14 @@ fn output_display_results(
                     );
                     println!("- **Created**: {dt}");
                 }
-                let snippet = apply_wrap(&hit.snippet, wrap);
+                let snippet = if highlight {
+                    // Use backticks for highlighting in markdown code blocks (shows as-is)
+                    // But for non-code context, we'd use **bold**
+                    highlight_matches(&hit.snippet, query, ">>>", "<<<")
+                } else {
+                    hit.snippet.clone()
+                };
+                let snippet = apply_wrap(&snippet, wrap);
                 println!("\n```\n{snippet}\n```\n");
             }
         }
@@ -3519,6 +3797,7 @@ fn run_status(
     db_override: Option<PathBuf>,
     json: bool,
     stale_threshold: u64,
+    robot_meta: bool,
 ) -> CliResult<()> {
     use rusqlite::Connection;
     use std::time::{SystemTime, UNIX_EPOCH};
@@ -3712,6 +3991,7 @@ fn run_health(
     db_override: Option<PathBuf>,
     json: bool,
     stale_threshold: u64,
+    robot_meta: bool,
 ) -> CliResult<()> {
     use std::time::Instant;
 
@@ -4307,6 +4587,10 @@ fn run_capabilities(json: bool) -> CliResult<()> {
             "state_command".to_string(),
             "api_version_command".to_string(),
             "introspect_command".to_string(),
+            "export_command".to_string(),
+            "expand_command".to_string(),
+            "timeline_command".to_string(),
+            "highlight_matches".to_string(),
         ],
         connectors: vec![
             "codex".to_string(),
@@ -4316,6 +4600,7 @@ fn run_capabilities(json: bool) -> CliResult<()> {
             "amp".to_string(),
             "cline".to_string(),
             "aider".to_string(),
+            "cursor".to_string(),
         ],
         limits: CapabilitiesLimits {
             max_limit: 10000,
@@ -5591,5 +5876,804 @@ fn run_self_update(tag: &str) -> Result<bool> {
     } else {
         warn!(target: "update", "installer returned non-zero status: {status:?}");
         Ok(false)
+    }
+}
+
+// ============================================================================
+// NEW COMMANDS: Export, Expand, Timeline
+// ============================================================================
+
+/// Export a conversation to markdown or other formats
+fn run_export(
+    path: &Path,
+    format: ConvExportFormat,
+    output: Option<&Path>,
+    include_tools: bool,
+) -> CliResult<()> {
+    use std::fs::File;
+    use std::io::{BufRead, BufReader, Write};
+
+    if !path.exists() {
+        return Err(CliError {
+            code: 3,
+            kind: "file-not-found",
+            message: format!("Session file not found: {}", path.display()),
+            hint: Some("Use 'cass search' to find session paths".to_string()),
+            retryable: false,
+        });
+    }
+
+    let file = File::open(path).map_err(|e| CliError {
+        code: 9,
+        kind: "file-open",
+        message: format!("Failed to open file: {e}"),
+        hint: None,
+        retryable: false,
+    })?;
+
+    let reader = BufReader::new(file);
+    let mut messages: Vec<serde_json::Value> = Vec::new();
+    let mut session_title: Option<String> = None;
+    let mut session_start: Option<i64> = None;
+    let mut session_end: Option<i64> = None;
+
+    for line in reader.lines().map_while(Result::ok) {
+        if line.trim().is_empty() {
+            continue;
+        }
+        if let Ok(msg) = serde_json::from_str::<serde_json::Value>(&line) {
+            if let Some(ts) = msg.get("timestamp").and_then(|t| t.as_i64()) {
+                if session_start.is_none() || ts < session_start.unwrap() {
+                    session_start = Some(ts);
+                }
+                if session_end.is_none() || ts > session_end.unwrap() {
+                    session_end = Some(ts);
+                }
+            }
+            messages.push(msg);
+        }
+    }
+
+    if messages.is_empty() {
+        return Err(CliError {
+            code: 9,
+            kind: "empty-session",
+            message: format!("No messages found in: {}", path.display()),
+            hint: None,
+            retryable: false,
+        });
+    }
+
+    // Find title from first user message
+    for msg in &messages {
+        let role = extract_role(msg);
+        if role == "user" {
+            let content = extract_text_content(msg);
+            if !content.is_empty() {
+                session_title = Some(
+                    content
+                        .lines()
+                        .next()
+                        .unwrap_or("Untitled Session")
+                        .chars()
+                        .take(80)
+                        .collect(),
+                );
+                break;
+            }
+        }
+    }
+
+    let formatted = match format {
+        ConvExportFormat::Markdown => {
+            format_as_markdown(&messages, &session_title, session_start, include_tools)
+        }
+        ConvExportFormat::Text => format_as_text(&messages, include_tools),
+        ConvExportFormat::Json => serde_json::to_string_pretty(&messages).unwrap_or_default(),
+        ConvExportFormat::Html => {
+            format_as_html(&messages, &session_title, session_start, include_tools)
+        }
+    };
+
+    if let Some(out_path) = output {
+        let mut out_file = File::create(out_path).map_err(|e| CliError {
+            code: 9,
+            kind: "file-create",
+            message: format!("Failed to create output file: {e}"),
+            hint: None,
+            retryable: false,
+        })?;
+        out_file
+            .write_all(formatted.as_bytes())
+            .map_err(|e| CliError {
+                code: 9,
+                kind: "file-write",
+                message: format!("Failed to write output: {e}"),
+                hint: None,
+                retryable: false,
+            })?;
+        println!("Exported to: {}", out_path.display());
+    } else {
+        println!("{formatted}");
+    }
+
+    Ok(())
+}
+
+fn format_as_markdown(
+    messages: &[serde_json::Value],
+    title: &Option<String>,
+    start_ts: Option<i64>,
+    include_tools: bool,
+) -> String {
+    use chrono::{TimeZone, Utc};
+    let mut md = String::new();
+    md.push_str("# ");
+    md.push_str(title.as_deref().unwrap_or("Conversation Export"));
+    md.push('\n');
+
+    if let Some(ts) = start_ts {
+        if let Some(dt) = Utc.timestamp_opt(ts, 0).single() {
+            md.push_str(&format!(
+                "\n*Started: {}*\n",
+                dt.format("%Y-%m-%d %H:%M UTC")
+            ));
+        }
+    }
+    md.push_str("\n---\n\n");
+
+    for msg in messages {
+        let role = extract_role(msg);
+        match role.as_str() {
+            "user" => md.push_str("## 👤 User\n\n"),
+            "assistant" => md.push_str("## 🤖 Assistant\n\n"),
+            _ => md.push_str(&format!("## {}\n\n", role)),
+        }
+
+        let content = extract_text_content(msg);
+        if !content.is_empty() {
+            md.push_str(&content);
+            md.push_str("\n\n");
+        }
+
+        // Also handle tool blocks if include_tools is set
+        if include_tools {
+            let content_val = msg
+                .get("message")
+                .and_then(|m| m.get("content"))
+                .or_else(|| msg.get("content"));
+            if let Some(arr) = content_val.and_then(|c| c.as_array()) {
+                for block in arr {
+                    if let Some(block_type) = block.get("type").and_then(|t| t.as_str()) {
+                        match block_type {
+                            "tool_use" => {
+                                let name =
+                                    block.get("name").and_then(|n| n.as_str()).unwrap_or("tool");
+                                md.push_str(&format!("**Tool: {}**\n", name));
+                                if let Some(input) = block.get("input") {
+                                    md.push_str("```json\n");
+                                    md.push_str(
+                                        &serde_json::to_string_pretty(input).unwrap_or_default(),
+                                    );
+                                    md.push_str("\n```\n\n");
+                                }
+                            }
+                            "tool_result" => {
+                                md.push_str("**Tool Result:**\n");
+                                if let Some(c) = block.get("content").and_then(|c| c.as_str()) {
+                                    let preview: String = c.chars().take(500).collect();
+                                    md.push_str("```\n");
+                                    md.push_str(&preview);
+                                    if c.len() > 500 {
+                                        md.push_str("\n... (truncated)");
+                                    }
+                                    md.push_str("\n```\n\n");
+                                }
+                            }
+                            _ => {}
+                        }
+                    }
+                }
+            }
+        }
+        md.push_str("---\n\n");
+    }
+    md
+}
+
+fn format_as_text(messages: &[serde_json::Value], include_tools: bool) -> String {
+    let mut text = String::new();
+    for msg in messages {
+        let role = extract_role(msg);
+        text.push_str(&format!("=== {} ===\n\n", role.to_uppercase()));
+
+        let content = extract_text_content(msg);
+        if !content.is_empty() {
+            text.push_str(&content);
+            text.push_str("\n\n");
+        }
+
+        // Also handle tool blocks if include_tools is set
+        if include_tools {
+            // Check nested message.content for tool blocks
+            let content_val = msg
+                .get("message")
+                .and_then(|m| m.get("content"))
+                .or_else(|| msg.get("content"));
+            if let Some(arr) = content_val.and_then(|c| c.as_array()) {
+                for block in arr {
+                    if let Some(block_type) = block.get("type").and_then(|t| t.as_str()) {
+                        if block_type == "tool_use" {
+                            let name =
+                                block.get("name").and_then(|n| n.as_str()).unwrap_or("tool");
+                            text.push_str(&format!("[Tool: {}]\n", name));
+                        }
+                    }
+                }
+            }
+        }
+    }
+    text
+}
+
+fn format_as_html(
+    messages: &[serde_json::Value],
+    title: &Option<String>,
+    start_ts: Option<i64>,
+    include_tools: bool,
+) -> String {
+    use chrono::{TimeZone, Utc};
+    let title_str = title.as_deref().unwrap_or("Conversation Export");
+    let date_str = start_ts
+        .and_then(|ts| Utc.timestamp_opt(ts, 0).single())
+        .map(|dt| dt.format("%Y-%m-%d %H:%M UTC").to_string())
+        .unwrap_or_default();
+
+    let mut html = format!(
+        r#"<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>{title_str}</title>
+    <style>
+        body {{ font-family: system-ui, sans-serif; max-width: 800px; margin: 0 auto; padding: 20px; background: #f5f5f5; }}
+        .message {{ background: white; border-radius: 8px; padding: 16px; margin: 12px 0; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }}
+        .user {{ border-left: 4px solid #2563eb; }}
+        .assistant {{ border-left: 4px solid #16a34a; }}
+        .role {{ font-weight: bold; color: #374151; margin-bottom: 8px; }}
+        .content {{ white-space: pre-wrap; line-height: 1.6; }}
+        .tool {{ background: #f3f4f6; padding: 8px; border-radius: 4px; font-family: monospace; font-size: 0.9em; margin: 8px 0; }}
+        h1 {{ color: #1f2937; }}
+        .meta {{ color: #6b7280; font-size: 0.9em; }}
+    </style>
+</head>
+<body>
+    <h1>{title_str}</h1>
+    <p class="meta">{date_str}</p>
+"#
+    );
+
+    for msg in messages {
+        let role = extract_role(msg);
+        let role_class = if role == "user" { "user" } else { "assistant" };
+        let role_display = match role.as_str() {
+            "user" => "👤 User",
+            "assistant" => "🤖 Assistant",
+            "system" => "⚙️ System",
+            _ => "💬 Message",
+        };
+
+        html.push_str(&format!(
+            r#"    <div class="message {role_class}">
+        <div class="role">{role_display}</div>
+        <div class="content">"#
+        ));
+
+        // Use extract_text_content for consistent content extraction
+        let content = extract_text_content(msg);
+        html.push_str(&html_escape(&content));
+
+        // Also handle tool use blocks if requested
+        if include_tools {
+            // Check for tool_use in nested message.content array
+            let content_val = msg
+                .get("message")
+                .and_then(|m| m.get("content"))
+                .or_else(|| msg.get("content"));
+            if let Some(arr) = content_val.and_then(|c| c.as_array()) {
+                for block in arr {
+                    if let Some("tool_use") = block.get("type").and_then(|t| t.as_str()) {
+                        let name = block.get("name").and_then(|n| n.as_str()).unwrap_or("tool");
+                        html.push_str(&format!(
+                            r#"<div class="tool">🔧 {}</div>"#,
+                            html_escape(name)
+                        ));
+                    }
+                }
+            }
+        }
+
+        html.push_str("</div>\n    </div>\n");
+    }
+    html.push_str("</body>\n</html>\n");
+    html
+}
+
+fn html_escape(s: &str) -> String {
+    s.replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
+}
+
+/// Show messages around a specific line in a session file
+fn run_expand(path: &Path, line: usize, context: usize, json: bool) -> CliResult<()> {
+    use std::fs::File;
+    use std::io::{BufRead, BufReader};
+
+    if !path.exists() {
+        return Err(CliError {
+            code: 3,
+            kind: "file-not-found",
+            message: format!("Session file not found: {}", path.display()),
+            hint: Some("Use 'cass search' to find session paths".to_string()),
+            retryable: false,
+        });
+    }
+
+    let file = File::open(path).map_err(|e| CliError {
+        code: 9,
+        kind: "file-open",
+        message: format!("Failed to open file: {e}"),
+        hint: None,
+        retryable: false,
+    })?;
+
+    let reader = BufReader::new(file);
+    let mut messages: Vec<(usize, serde_json::Value)> = Vec::new();
+    let mut target_msg_idx: Option<usize> = None;
+    let mut current_line: usize = 0;
+
+    for raw_line in reader.lines().map_while(Result::ok) {
+        current_line += 1;
+        if raw_line.trim().is_empty() {
+            continue;
+        }
+        if let Ok(msg) = serde_json::from_str::<serde_json::Value>(&raw_line) {
+            if current_line == line {
+                target_msg_idx = Some(messages.len());
+            }
+            messages.push((current_line, msg));
+        }
+    }
+
+    if target_msg_idx.is_none() && line > 0 {
+        for (idx, (msg_line, _)) in messages.iter().enumerate() {
+            if *msg_line >= line {
+                target_msg_idx = Some(idx);
+                break;
+            }
+        }
+        if target_msg_idx.is_none() && !messages.is_empty() {
+            target_msg_idx = Some(messages.len() - 1);
+        }
+    }
+
+    let target_idx = target_msg_idx.ok_or_else(|| CliError {
+        code: 2,
+        kind: "line-not-found",
+        message: format!("No message found at or near line {}", line),
+        hint: Some(format!("File has {} messages", messages.len())),
+        retryable: false,
+    })?;
+
+    let start = target_idx.saturating_sub(context);
+    let end = (target_idx + context + 1).min(messages.len());
+
+    let context_messages: Vec<_> = messages[start..end]
+        .iter()
+        .enumerate()
+        .map(|(i, (line_num, msg))| {
+            let is_target = start + i == target_idx;
+            (line_num, msg, is_target)
+        })
+        .collect();
+
+    if json {
+        let output: Vec<serde_json::Value> = context_messages
+            .iter()
+            .map(|(line_num, msg, is_target)| {
+                let role = extract_role(msg);
+                let content = extract_text_content(msg);
+                serde_json::json!({
+                    "line": line_num,
+                    "role": role,
+                    "is_target": is_target,
+                    "content": content,
+                })
+            })
+            .collect();
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&output).unwrap_or_default()
+        );
+    } else {
+        println!("\n📍 Context around line {} in {}\n", line, path.display());
+        println!("{}", "─".repeat(60));
+
+        for (line_num, msg, is_target) in context_messages {
+            let role = extract_role(msg);
+            let content = extract_text_content(msg);
+            let preview: String = content.chars().take(300).collect();
+            let marker = if is_target { ">>>" } else { "   " };
+            let role_icon = match role.as_str() {
+                "user" => "👤",
+                "assistant" => "🤖",
+                _ => "📝",
+            };
+
+            println!(
+                "{} L{:>4} {} {}",
+                marker,
+                line_num,
+                role_icon,
+                role.to_uppercase()
+            );
+            println!("        {}", preview.replace('\n', " "));
+            if content.len() > 300 {
+                println!("        ... ({} more chars)", content.len() - 300);
+            }
+            println!();
+        }
+
+        println!("{}", "─".repeat(60));
+        println!(
+            "Showing messages {} to {} of {} total",
+            start + 1,
+            end,
+            messages.len()
+        );
+    }
+    Ok(())
+}
+
+fn extract_text_content(msg: &serde_json::Value) -> String {
+    // Try direct content first (standard format)
+    if let Some(content) = msg.get("content") {
+        if let Some(text) = content.as_str() {
+            return text.to_string();
+        }
+        if let Some(arr) = content.as_array() {
+            let mut result = String::new();
+            for block in arr {
+                if block.get("type").and_then(|t| t.as_str()) == Some("text") {
+                    if let Some(text) = block.get("text").and_then(|t| t.as_str()) {
+                        if !result.is_empty() {
+                            result.push('\n');
+                        }
+                        result.push_str(text);
+                    }
+                }
+            }
+            if !result.is_empty() {
+                return result;
+            }
+        }
+    }
+    // Try nested message.content (Claude Code format)
+    if let Some(inner) = msg.get("message") {
+        if let Some(content) = inner.get("content") {
+            if let Some(text) = content.as_str() {
+                return text.to_string();
+            }
+            if let Some(arr) = content.as_array() {
+                let mut result = String::new();
+                for block in arr {
+                    if block.get("type").and_then(|t| t.as_str()) == Some("text") {
+                        if let Some(text) = block.get("text").and_then(|t| t.as_str()) {
+                            if !result.is_empty() {
+                                result.push('\n');
+                            }
+                            result.push_str(text);
+                        }
+                    }
+                }
+                return result;
+            }
+        }
+    }
+    String::new()
+}
+
+/// Extract role from message (supports various formats)
+fn extract_role(msg: &serde_json::Value) -> String {
+    // Try direct role
+    if let Some(role) = msg.get("role").and_then(|r| r.as_str()) {
+        return role.to_string();
+    }
+    // Try nested message.role (Claude Code format)
+    if let Some(inner) = msg.get("message") {
+        if let Some(role) = inner.get("role").and_then(|r| r.as_str()) {
+            return role.to_string();
+        }
+    }
+    // Try type field (Claude Code also uses "type": "user" or "type": "assistant")
+    if let Some(type_val) = msg.get("type").and_then(|t| t.as_str()) {
+        match type_val {
+            "user" => return "user".to_string(),
+            "assistant" => return "assistant".to_string(),
+            _ => {}
+        }
+    }
+    "unknown".to_string()
+}
+
+/// Show activity timeline for a time range
+fn run_timeline(
+    since: Option<&str>,
+    until: Option<&str>,
+    today: bool,
+    agents: &[String],
+    data_dir: &Option<PathBuf>,
+    db_override: Option<PathBuf>,
+    json: bool,
+    group_by: TimelineGrouping,
+) -> CliResult<()> {
+    use chrono::{Local, TimeZone, Utc};
+    use rusqlite::Connection;
+    use std::collections::HashMap;
+
+    let data_root = data_dir.clone().unwrap_or_else(default_data_dir);
+    let db_path = db_override.unwrap_or_else(|| data_root.join("cass.db"));
+
+    if !db_path.exists() {
+        return Err(CliError {
+            code: 3,
+            kind: "db-not-found",
+            message: "No database found. Run 'cass index' first.".to_string(),
+            hint: Some(format!("Expected: {}", db_path.display())),
+            retryable: true,
+        });
+    }
+
+    let conn = Connection::open(&db_path).map_err(|e| CliError {
+        code: 9,
+        kind: "db-open",
+        message: format!("Failed to open database: {e}"),
+        hint: None,
+        retryable: true,
+    })?;
+
+    let now = Local::now();
+    let (start_ts, end_ts) = if today {
+        let start_of_day = now.date_naive().and_hms_opt(0, 0, 0).unwrap();
+        let local_start = Local.from_local_datetime(&start_of_day).single().unwrap();
+        (local_start.timestamp(), now.timestamp())
+    } else {
+        let start = since
+            .and_then(parse_datetime_flexible)
+            .unwrap_or_else(|| (now - chrono::Duration::days(7)).timestamp());
+        let end = until
+            .and_then(parse_datetime_flexible)
+            .unwrap_or_else(|| now.timestamp());
+        (start, end)
+    };
+
+    let mut sql = String::from(
+        "SELECT c.id, c.agent, c.title, c.started_at, c.ended_at, c.source_path,
+                COUNT(m.id) as message_count
+         FROM conversations c
+         LEFT JOIN messages m ON m.conversation_id = c.id
+         WHERE c.started_at >= ?1 AND c.started_at <= ?2",
+    );
+
+    let mut params: Vec<Box<dyn rusqlite::ToSql>> = vec![Box::new(start_ts), Box::new(end_ts)];
+
+    if !agents.is_empty() {
+        sql.push_str(" AND c.agent IN (");
+        for (i, agent) in agents.iter().enumerate() {
+            if i > 0 {
+                sql.push_str(", ");
+            }
+            sql.push_str(&format!("?{}", params.len() + 1));
+            params.push(Box::new(agent.clone()));
+        }
+        sql.push(')');
+    }
+
+    sql.push_str(" GROUP BY c.id ORDER BY c.started_at DESC");
+
+    let mut stmt = conn.prepare(&sql).map_err(|e| CliError {
+        code: 9,
+        kind: "db-query",
+        message: format!("Query failed: {e}"),
+        hint: None,
+        retryable: false,
+    })?;
+
+    let param_refs: Vec<&dyn rusqlite::ToSql> = params.iter().map(|p| p.as_ref()).collect();
+
+    let rows = stmt
+        .query_map(param_refs.as_slice(), |row| {
+            Ok((
+                row.get::<_, i64>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, Option<String>>(2)?,
+                row.get::<_, i64>(3)?,
+                row.get::<_, Option<i64>>(4)?,
+                row.get::<_, String>(5)?,
+                row.get::<_, i64>(6)?,
+            ))
+        })
+        .map_err(|e| CliError {
+            code: 9,
+            kind: "db-query",
+            message: format!("Query failed: {e}"),
+            hint: None,
+            retryable: false,
+        })?;
+
+    let mut sessions: Vec<(i64, String, Option<String>, i64, Option<i64>, String, i64)> = Vec::new();
+    for row in rows {
+        if let Ok(r) = row {
+            sessions.push(r);
+        }
+    }
+
+    if json {
+        let output = match group_by {
+            TimelineGrouping::None => {
+                let items: Vec<serde_json::Value> = sessions
+                    .iter()
+                    .map(|(id, agent, title, started, ended, path, msg_count)| {
+                        let duration = ended.map(|e| e - started);
+                        serde_json::json!({
+                            "id": id, "agent": agent, "title": title,
+                            "started_at": started, "ended_at": ended,
+                            "duration_seconds": duration, "source_path": path,
+                            "message_count": msg_count,
+                        })
+                    })
+                    .collect();
+                serde_json::json!({
+                    "range": { "start": start_ts, "end": end_ts },
+                    "total_sessions": sessions.len(),
+                    "sessions": items,
+                })
+            }
+            TimelineGrouping::Hour | TimelineGrouping::Day => {
+                let mut groups: HashMap<String, Vec<serde_json::Value>> = HashMap::new();
+                for (id, agent, title, started, ended, path, msg_count) in &sessions {
+                    let dt = Utc.timestamp_opt(*started, 0).single().unwrap_or_else(Utc::now);
+                    let key = match group_by {
+                        TimelineGrouping::Hour => dt.format("%Y-%m-%d %H:00").to_string(),
+                        TimelineGrouping::Day => dt.format("%Y-%m-%d").to_string(),
+                        _ => unreachable!(),
+                    };
+                    groups.entry(key).or_default().push(serde_json::json!({
+                        "id": id, "agent": agent, "title": title,
+                        "started_at": started, "ended_at": ended,
+                        "source_path": path, "message_count": msg_count,
+                    }));
+                }
+                serde_json::json!({
+                    "range": { "start": start_ts, "end": end_ts },
+                    "total_sessions": sessions.len(),
+                    "groups": groups,
+                })
+            }
+        };
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&output).unwrap_or_default()
+        );
+    } else {
+        let start_dt = Utc.timestamp_opt(start_ts, 0).single().unwrap_or_else(Utc::now);
+        let end_dt = Utc.timestamp_opt(end_ts, 0).single().unwrap_or_else(Utc::now);
+
+        println!("\n📅 Activity Timeline");
+        println!(
+            "   {} to {}",
+            start_dt.format("%Y-%m-%d %H:%M"),
+            end_dt.format("%Y-%m-%d %H:%M")
+        );
+        println!("{}", "─".repeat(70));
+
+        if sessions.is_empty() {
+            println!("\n   No sessions found in this time range.\n");
+            return Ok(());
+        }
+
+        let mut current_group = String::new();
+        for (_id, agent, title, started, ended, _path, msg_count) in &sessions {
+            let dt = Utc.timestamp_opt(*started, 0).single().unwrap_or_else(Utc::now);
+
+            let group_key = match group_by {
+                TimelineGrouping::Hour => dt.format("%Y-%m-%d %H:00").to_string(),
+                TimelineGrouping::Day => dt.format("%Y-%m-%d (%A)").to_string(),
+                TimelineGrouping::None => String::new(),
+            };
+
+            if group_key != current_group && group_by != TimelineGrouping::None {
+                println!("\n  📆 {}", group_key);
+                current_group = group_key;
+            }
+
+            let duration = ended.map(|e| {
+                let mins = (e - started) / 60;
+                if mins < 60 {
+                    format!("{}m", mins)
+                } else {
+                    format!("{}h{}m", mins / 60, mins % 60)
+                }
+            });
+
+            let title_str = title.as_deref().unwrap_or("(untitled)");
+            let title_preview: String = title_str.chars().take(40).collect();
+
+            let agent_icon = match agent.as_str() {
+                "claude_code" => "🟣",
+                "codex" => "🟢",
+                "gemini" => "🔵",
+                "amp" => "🟡",
+                "cursor" => "⚪",
+                _ => "⚫",
+            };
+
+            println!(
+                "     {} {} {:>5} │ {} │ {}",
+                dt.format("%H:%M"),
+                agent_icon,
+                duration.as_deref().unwrap_or(""),
+                format!("{:>3} msgs", msg_count),
+                title_preview
+            );
+        }
+
+        println!("\n{}", "─".repeat(70));
+        println!("   Total: {} sessions\n", sessions.len());
+    }
+    Ok(())
+}
+
+fn parse_datetime_flexible(s: &str) -> Option<i64> {
+    use chrono::{Local, NaiveDate, TimeZone};
+
+    if let Ok(dt) = chrono::DateTime::parse_from_rfc3339(s) {
+        return Some(dt.timestamp());
+    }
+
+    if let Ok(date) = NaiveDate::parse_from_str(s, "%Y-%m-%d") {
+        if let Some(dt) = date.and_hms_opt(0, 0, 0) {
+            if let Some(local) = Local.from_local_datetime(&dt).single() {
+                return Some(local.timestamp());
+            }
+        }
+    }
+
+    let now = Local::now();
+    match s.to_lowercase().as_str() {
+        "today" => {
+            let start = now.date_naive().and_hms_opt(0, 0, 0)?;
+            Local.from_local_datetime(&start).single().map(|d| d.timestamp())
+        }
+        "yesterday" => {
+            let yesterday = (now - chrono::Duration::days(1)).date_naive();
+            let start = yesterday.and_hms_opt(0, 0, 0)?;
+            Local.from_local_datetime(&start).single().map(|d| d.timestamp())
+        }
+        _ => {
+            if let Some(days_str) = s.strip_suffix('d') {
+                if let Ok(days) = days_str.parse::<i64>() {
+                    return Some((now - chrono::Duration::days(days)).timestamp());
+                }
+            }
+            if let Some(hours_str) = s.strip_suffix('h') {
+                if let Ok(hours) = hours_str.parse::<i64>() {
+                    return Some((now - chrono::Duration::hours(hours)).timestamp());
+                }
+            }
+            None
+        }
     }
 }
