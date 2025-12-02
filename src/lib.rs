@@ -1623,7 +1623,9 @@ fn state_meta_json(data_dir: &Path, db_path: &Path, stale_threshold: u64) -> ser
     use rusqlite::Connection;
     use std::time::{SystemTime, UNIX_EPOCH};
 
-    let index_path = data_dir.join("tantivy_index");
+    // Use the actual versioned index path (index/v4, not tantivy_index)
+    let index_path = crate::search::tantivy::index_dir(data_dir)
+        .unwrap_or_else(|_| data_dir.join("index").join("v4"));
     let index_exists = index_path.exists();
     let db_exists = db_path.exists();
     let watch_state_path = data_dir.join("watch_state.json");
@@ -3302,7 +3304,9 @@ fn run_diag(
     let version = env!("CARGO_PKG_VERSION");
     let data_dir = data_dir_override.clone().unwrap_or_else(default_data_dir);
     let db_path = db_override.unwrap_or_else(|| data_dir.join("agent_search.db"));
-    let index_path = data_dir.join("tantivy_index");
+    // Use the actual versioned index path (index/v4, not tantivy_index)
+    let index_path = crate::search::tantivy::index_dir(&data_dir)
+        .unwrap_or_else(|_| data_dir.join("index").join("v4"));
 
     // Check database existence and get stats
     let (db_exists, db_size, conversation_count, message_count) = if db_path.exists() {
@@ -3511,7 +3515,9 @@ fn run_status(
 
     let data_dir = data_dir_override.clone().unwrap_or_else(default_data_dir);
     let db_path = db_override.unwrap_or_else(|| data_dir.join("agent_search.db"));
-    let index_path = data_dir.join("tantivy_index");
+    // Use the actual versioned index path (index/v4, not tantivy_index)
+    let index_path = crate::search::tantivy::index_dir(&data_dir)
+        .unwrap_or_else(|_| data_dir.join("index").join("v4"));
     let watch_state_path = data_dir.join("watch_state.json");
 
     // Check if database exists
