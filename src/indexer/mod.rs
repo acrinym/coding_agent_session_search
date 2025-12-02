@@ -520,9 +520,50 @@ pub mod persist {
     use anyhow::Result;
 
     use crate::connectors::NormalizedConversation;
-    use crate::model::types::{Agent, AgentKind, Conversation, Message, MessageRole};
+    use crate::model::types::{Agent, AgentKind, Conversation, Message, MessageRole, Snippet};
     use crate::search::tantivy::TantivyIndex;
     use crate::storage::sqlite::{InsertOutcome, SqliteStorage};
+
+    /// Convert a NormalizedConversation to the internal Conversation type for SQLite storage.
+    pub fn map_to_internal(conv: &NormalizedConversation) -> Conversation {
+        Conversation {
+            id: None,
+            agent_slug: conv.agent_slug.clone(),
+            workspace: conv.workspace.clone(),
+            external_id: conv.external_id.clone(),
+            title: conv.title.clone(),
+            source_path: conv.source_path.clone(),
+            started_at: conv.started_at,
+            ended_at: conv.ended_at,
+            approx_tokens: None,
+            metadata_json: conv.metadata.clone(),
+            messages: conv
+                .messages
+                .iter()
+                .map(|m| Message {
+                    id: None,
+                    idx: m.idx,
+                    role: map_role(&m.role),
+                    author: m.author.clone(),
+                    created_at: m.created_at,
+                    content: m.content.clone(),
+                    extra_json: m.extra.clone(),
+                    snippets: m
+                        .snippets
+                        .iter()
+                        .map(|s| Snippet {
+                            id: None,
+                            file_path: s.file_path.clone(),
+                            start_line: s.start_line,
+                            end_line: s.end_line,
+                            language: s.language.clone(),
+                            snippet_text: s.snippet_text.clone(),
+                        })
+                        .collect(),
+                })
+                .collect(),
+        }
+    }
 
     pub fn persist_conversation(
         storage: &mut SqliteStorage,
@@ -545,40 +586,14 @@ pub mod persist {
             None
         };
 
-        let messages: Vec<Message> = conv
-            .messages
-            .iter()
-            .map(|m| Message {
-                id: None,
-                idx: m.idx,
-                role: map_role(&m.role),
-                author: m.author.clone(),
-                created_at: m.created_at,
-                content: m.content.clone(),
-                extra_json: m.extra.clone(),
-                snippets: Vec::new(),
-            })
-            .collect();
-
-        let conversation = Conversation {
-            id: None,
-            agent_slug: conv.agent_slug.clone(),
-            workspace: conv.workspace.clone(),
-            external_id: conv.external_id.clone(),
-            title: conv.title.clone(),
-            source_path: conv.source_path.clone(),
-            started_at: conv.started_at,
-            ended_at: conv.ended_at,
-            approx_tokens: None,
-            metadata_json: conv.metadata.clone(),
-            messages,
-        };
+        let internal_conv = map_to_internal(conv);
 
         let InsertOutcome {
             conversation_id: _,
             inserted_indices,
-        } = storage.insert_conversation_tree(agent_id, workspace_id, &conversation)?;
+        } = storage.insert_conversation_tree(agent_id, workspace_id, &internal_conv)?;
 
+        // Only add newly inserted messages to the Tantivy index (incremental)
         if !inserted_indices.is_empty() {
             let new_msgs: Vec<_> = conv
                 .messages
