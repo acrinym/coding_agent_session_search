@@ -238,6 +238,53 @@ pub fn open_in_browser(url: &str) -> std::io::Result<()> {
     Ok(())
 }
 
+/// Run the self-update installer script interactively.
+/// This function does NOT return - it replaces the current process with the installer.
+/// The caller should ensure the terminal is in a clean state before calling.
+pub fn run_self_update() -> ! {
+    #[cfg(any(target_os = "macos", target_os = "linux"))]
+    {
+        use std::os::unix::process::CommandExt;
+        let install_url =
+            format!("https://raw.githubusercontent.com/{GITHUB_REPO}/main/install.sh");
+        // exec replaces the current process, so we don't return
+        let err = std::process::Command::new("bash")
+            .args([
+                "-c",
+                &format!("curl -fsSL '{}' | bash -s -- --easy-mode", install_url),
+            ])
+            .exec();
+        // If we get here, exec failed
+        eprintln!("Failed to run installer: {}", err);
+        std::process::exit(1);
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        let install_url =
+            format!("https://raw.githubusercontent.com/{GITHUB_REPO}/main/install.ps1");
+        // Windows doesn't have exec(), so we spawn and wait
+        let status = std::process::Command::new("powershell")
+            .args([
+                "-ExecutionPolicy",
+                "Bypass",
+                "-Command",
+                &format!(
+                    "Invoke-WebRequest -Uri '{}' -UseBasicParsing | Invoke-Expression",
+                    install_url
+                ),
+            ])
+            .status();
+        match status {
+            Ok(s) => std::process::exit(s.code().unwrap_or(0)),
+            Err(e) => {
+                eprintln!("Failed to run installer: {}", e);
+                std::process::exit(1);
+            }
+        }
+    }
+}
+
 /// Fetch latest release from GitHub API
 async fn fetch_latest_release() -> Result<GitHubRelease> {
     let url = format!("https://api.github.com/repos/{GITHUB_REPO}/releases/latest");

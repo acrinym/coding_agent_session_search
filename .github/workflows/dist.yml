@@ -23,46 +23,94 @@ jobs:
           cargo test --test e2e_index_tui -- --test-threads=1
           cargo test --test e2e_install_easy -- --test-threads=1
 
-  dist:
+  build:
     needs: test
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Linux x86_64
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            artifact_name: cass
+          # macOS Intel
+          - os: macos-13
+            target: x86_64-apple-darwin
+            artifact_name: cass
+          # macOS Apple Silicon
+          - os: macos-14
+            target: aarch64-apple-darwin
+            artifact_name: cass
+          # Windows
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            artifact_name: cass.exe
+
+    runs-on: ${{ matrix.os }}
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust nightly
+        uses: dtolnay/rust-toolchain@nightly
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Build release binary
+        run: cargo build --release --target ${{ matrix.target }}
+
+      - name: Create tarball (Unix)
+        if: runner.os != 'Windows'
+        run: |
+          mkdir -p dist
+          TARBALL="coding-agent-search-${{ matrix.target }}.tar.xz"
+          cd target/${{ matrix.target }}/release
+          tar -cJf "../../../dist/$TARBALL" ${{ matrix.artifact_name }}
+          cd ../../../dist
+          shasum -a 256 "$TARBALL" > "$TARBALL.sha256"
+
+      - name: Create zip (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path dist | Out-Null
+          $zipName = "coding-agent-search-${{ matrix.target }}.zip"
+          Compress-Archive -Path "target/${{ matrix.target }}/release/${{ matrix.artifact_name }}" -DestinationPath "dist/$zipName"
+          cd dist
+          $hash = (Get-FileHash -Algorithm SHA256 $zipName).Hash.ToLower()
+          "$hash  $zipName" | Out-File -Encoding ASCII "$zipName.sha256"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.target }}
+          path: dist/*
+
+  release:
+    needs: build
     runs-on: ubuntu-latest
     permissions:
       contents: write
+
     steps:
       - uses: actions/checkout@v4
-      - name: Install Rust nightly
-        uses: dtolnay/rust-toolchain@nightly
-      - name: Install cargo-dist
-        run: cargo install cargo-dist --locked --root ~/.cargo
-      - name: Add cargo bin to PATH
-        run: echo "$HOME/.cargo/bin" >> $GITHUB_PATH
-      - name: dist init
-        run: ~/.cargo/bin/dist init --yes --ci github --installer shell --installer powershell
-      - name: Build distributions
-        env:
-          CARGO_TERM_COLOR: always
-        run: |
-          ~/.cargo/bin/dist build --installer shell --installer powershell
-      - name: List dist contents
-        run: ls -laR target/distrib
-      - name: Checksums
-        run: |
-          cd target/distrib
-          find . -maxdepth 1 -type f ! -name "*.sha256" ! -name "sha256.sum" -print0 | while IFS= read -r -d '' f; do
-            # Strip leading ./ from find output
-            filename="${f#./}"
-            if [ ! -f "$filename.sha256" ]; then
-              echo "Hashing $filename ..."
-              sha256sum "$filename" > "$filename.sha256" || { echo "Failed to hash $filename"; exit 1; }
-            else
-              echo "Skipping $filename (already hashed)"
-            fi
-          done
-      - name: Upload artifacts (workflow)
-        uses: actions/upload-artifact@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
         with:
-          name: dist-artifacts
-          path: target/distrib/**/*
+          path: dist
+          merge-multiple: true
+
+      - name: List artifacts
+        run: ls -laR dist
+
+      - name: Copy install scripts to dist
+        run: |
+          cp install.sh dist/
+          cp install.ps1 dist/
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
@@ -70,6 +118,6 @@ jobs:
           draft: false
           prerelease: false
           files: |
-            target/distrib/*
+            dist/*
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

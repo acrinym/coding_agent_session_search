@@ -36,7 +36,9 @@ use crate::ui::components::theme::ThemePalette;
 use crate::ui::components::widgets::search_bar;
 use crate::ui::data::{ConversationView, InputMode, load_conversation, role_style};
 use crate::ui::shortcuts;
-use crate::update_check::{UpdateInfo, open_in_browser, skip_version, spawn_update_check};
+use crate::update_check::{
+    UpdateInfo, open_in_browser, run_self_update, skip_version, spawn_update_check,
+};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum DetailTab {
@@ -4106,7 +4108,22 @@ pub fn run_tui(
                                     help_pinned = !help_pinned;
                                 }
                                 PaletteAction::OpenUpdateBanner => {
-                                    status = "Update check: not yet wired".to_string();
+                                    if let Some(ref info) = update_info {
+                                        if info.should_show() {
+                                            // Tear down TUI and run the installer
+                                            teardown_terminal().ok();
+                                            println!(
+                                                "Updating from v{} to v{}...\n",
+                                                info.current_version, info.latest_version
+                                            );
+                                            // This does not return - it execs the installer
+                                            run_self_update();
+                                        } else {
+                                            status = "You're on the latest version".to_string();
+                                        }
+                                    } else {
+                                        status = "No update information available yet".to_string();
+                                    }
                                 }
                                 PaletteAction::FilterAgent => {
                                     input_mode = InputMode::Agent;
