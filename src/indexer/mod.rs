@@ -43,7 +43,7 @@ pub struct IndexOptions {
     pub full: bool,
     pub force_rebuild: bool,
     pub watch: bool,
-    /// One-shot watch hook: when set, watch_sources will bypass notify and invoke reindex for these paths once.
+    /// One-shot watch hook: when set, `watch_sources` will bypass notify and invoke reindex for these paths once.
     pub watch_once_paths: Option<Vec<PathBuf>>,
     pub db_path: PathBuf,
     pub data_dir: PathBuf,
@@ -282,7 +282,7 @@ fn watch_sources<F: Fn(Vec<PathBuf>, bool) + Send + 'static>(
                 continue;
             }
 
-            let remaining = max_wait - elapsed;
+            let remaining = max_wait.checked_sub(elapsed).unwrap();
             let wait = debounce.min(remaining);
 
             match rx.recv_timeout(wait) {
@@ -313,9 +313,10 @@ fn watch_sources<F: Fn(Vec<PathBuf>, bool) + Send + 'static>(
 
 fn watch_roots() -> Vec<PathBuf> {
     vec![
-        std::env::var("CODEX_HOME")
-            .map(PathBuf::from)
-            .unwrap_or_else(|_| dirs::home_dir().unwrap_or_default().join(".codex/sessions")),
+        std::env::var("CODEX_HOME").map_or_else(
+            |_| dirs::home_dir().unwrap_or_default().join(".codex/sessions"),
+            PathBuf::from,
+        ),
         dirs::home_dir()
             .unwrap_or_default()
             .join(".config/Code/User/globalStorage/saoudrizwan.claude-dev"),
@@ -394,7 +395,7 @@ fn reindex_paths(
                 .map_err(|_| anyhow::anyhow!("state lock poisoned"))?;
             guard
                 .get(&kind)
-                .cloned()
+                .copied()
                 .or_else(|| ts.map(|v| v.saturating_sub(1)))
         };
         let ctx = crate::connectors::ScanContext {
@@ -622,7 +623,7 @@ mod tests {
     ) -> NormalizedConversation {
         NormalizedConversation {
             agent_slug: "tester".into(),
-            external_id: external_id.map(|s| s.to_owned()),
+            external_id: external_id.map(std::borrow::ToOwned::to_owned),
             title: Some("Demo".into()),
             workspace: Some(PathBuf::from("/workspace/demo")),
             source_path: PathBuf::from("/logs/demo.jsonl"),
@@ -893,10 +894,7 @@ CREATE VIRTUAL TABLE fts_messages USING fts5(
             + 10_000;
         std::fs::write(
             &amp_file,
-            format!(
-                r#"{{"id":"tp","messages":[{{"role":"user","text":"p","createdAt":{}}}]}}"#,
-                now
-            ),
+            format!(r#"{{"id":"tp","messages":[{{"role":"user","text":"p","createdAt":{now}}}]}}"#),
         )
         .unwrap();
 

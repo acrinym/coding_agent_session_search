@@ -22,9 +22,10 @@ impl CodexConnector {
     }
 
     fn home() -> PathBuf {
-        std::env::var("CODEX_HOME")
-            .map(PathBuf::from)
-            .unwrap_or_else(|_| dirs::home_dir().unwrap_or_default().join(".codex"))
+        std::env::var("CODEX_HOME").map_or_else(
+            |_| dirs::home_dir().unwrap_or_default().join(".codex"),
+            PathBuf::from,
+        )
     }
 
     fn rollout_files(root: &Path) -> Vec<PathBuf> {
@@ -68,8 +69,7 @@ impl Connector for CodexConnector {
             || ctx
                 .data_root
                 .file_name()
-                .map(|n| n.to_str().unwrap_or("").contains("codex"))
-                .unwrap_or(false)
+                .is_some_and(|n| n.to_str().unwrap_or("").contains("codex"))
         {
             ctx.data_root.clone()
         } else {
@@ -90,12 +90,16 @@ impl Connector for CodexConnector {
             let external_id = source_path
                 .strip_prefix(&sessions_dir)
                 .ok()
-                .and_then(|rel| rel.with_extension("").to_str().map(|s| s.to_string()))
+                .and_then(|rel| {
+                    rel.with_extension("")
+                        .to_str()
+                        .map(std::string::ToString::to_string)
+                })
                 .or_else(|| {
                     source_path
                         .file_stem()
                         .and_then(|s| s.to_str())
-                        .map(|s| s.to_string())
+                        .map(std::string::ToString::to_string)
                 });
             let content = fs::read_to_string(&file)
                 .with_context(|| format!("read rollout {}", file.display()))?;
@@ -240,7 +244,7 @@ impl Connector for CodexConnector {
 
                 // Parse items array
                 if let Some(items) = val.get("items").and_then(|v| v.as_array()) {
-                    for item in items.iter() {
+                    for item in items {
                         let role = item.get("role").and_then(|v| v.as_str()).unwrap_or("agent");
 
                         let content_str = item

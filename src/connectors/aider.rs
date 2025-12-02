@@ -82,7 +82,7 @@ impl AiderConnector {
             agent_slug: "aider".to_string(),
             external_id: Some(path.file_name().unwrap().to_string_lossy().to_string()),
             title: Some(format!("Aider Chat: {}", path.display())),
-            workspace: path.parent().map(|p| p.to_path_buf()),
+            workspace: path.parent().map(std::path::Path::to_path_buf),
             source_path: path.to_path_buf(),
             started_at: Some(ts),
             ended_at: Some(ts),

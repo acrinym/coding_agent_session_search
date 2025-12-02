@@ -220,7 +220,7 @@ fn opencode_ignores_internal_dbs() {
     );
 }
 
-/// Test since_ts filtering logic
+/// Test `since_ts` filtering logic
 #[test]
 fn opencode_since_ts_logic() {
     let dir = TempDir::new().unwrap();
@@ -374,7 +374,7 @@ fn opencode_scans_multiple_dbs() {
 // Additional edge case tests
 // ============================================================================
 
-/// Test agent_slug is always "opencode"
+/// Test `agent_slug` is always "opencode"
 #[test]
 fn opencode_sets_correct_agent_slug() {
     let dir = TempDir::new().unwrap();
@@ -397,7 +397,7 @@ fn opencode_sets_correct_agent_slug() {
     assert_eq!(convs[0].agent_slug, "opencode");
 }
 
-/// Test source_path is set to DB path
+/// Test `source_path` is set to DB path
 #[test]
 fn opencode_sets_source_path() {
     let dir = TempDir::new().unwrap();
@@ -420,7 +420,7 @@ fn opencode_sets_source_path() {
     assert_eq!(convs[0].source_path, db_path);
 }
 
-/// Test started_at and ended_at computation
+/// Test `started_at` and `ended_at` computation
 #[test]
 fn opencode_computes_started_ended_at() {
     let dir = TempDir::new().unwrap();
@@ -499,7 +499,7 @@ fn opencode_assigns_sequential_indices() {
     }
 }
 
-/// Test workspace extraction from root_path column
+/// Test workspace extraction from `root_path` column
 #[test]
 fn opencode_workspace_from_root_path() {
     let dir = TempDir::new().unwrap();
@@ -583,7 +583,7 @@ fn opencode_handles_db_without_messages() {
     assert!(convs.is_empty());
 }
 
-/// Test task_id as alternative to session_id
+/// Test `task_id` as alternative to `session_id`
 #[test]
 fn opencode_groups_by_task_id() {
     let dir = TempDir::new().unwrap();
@@ -841,7 +841,7 @@ fn opencode_scans_nested_directories() {
     assert_eq!(convs[0].messages[0].content, "deep");
 }
 
-/// Test metadata contains db_path
+/// Test metadata contains `db_path`
 #[test]
 fn opencode_metadata_contains_db_path() {
     let dir = TempDir::new().unwrap();
@@ -917,7 +917,7 @@ fn opencode_preserves_null_content() {
     assert_eq!(convs[0].messages[1].content, "valid");
 }
 
-/// Test started_at fallback to first message timestamp when session has no timestamp
+/// Test `started_at` fallback to first message timestamp when session has no timestamp
 #[test]
 fn opencode_started_at_fallback() {
     let dir = TempDir::new().unwrap();

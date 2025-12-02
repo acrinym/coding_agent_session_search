@@ -47,7 +47,7 @@ fn read_watch_once_paths_env() -> Option<Vec<std::path::PathBuf>> {
     about = "Unified TUI search over coding agent histories"
 )]
 pub struct Cli {
-    /// Path to the SQLite database (defaults to platform data dir)
+    /// Path to the `SQLite` database (defaults to platform data dir)
     #[arg(long)]
     pub db: Option<PathBuf>,
 
@@ -96,7 +96,7 @@ pub enum Commands {
         #[arg(long, default_value_t = false)]
         once: bool,
 
-        /// Delete persisted UI state (tui_state.json) before launch
+        /// Delete persisted UI state (`tui_state.json`) before launch
         #[arg(long, default_value_t = false)]
         reset_state: bool,
 
@@ -165,11 +165,11 @@ pub enum Commands {
         /// Robot output format: json (pretty), jsonl (streaming), compact (single-line)
         #[arg(long, value_enum)]
         robot_format: Option<RobotFormat>,
-        /// Include extended metadata in robot output (elapsed_ms, wildcard_fallback, cache_stats)
+        /// Include extended metadata in robot output (`elapsed_ms`, `wildcard_fallback`, `cache_stats`)
         #[arg(long)]
         robot_meta: bool,
-        /// Select specific fields in JSON output (comma-separated). Use 'minimal' for source_path,line_number,agent
-        /// or 'summary' for source_path,line_number,agent,title,score. Example: --fields source_path,line_number
+        /// Select specific fields in JSON output (comma-separated). Use 'minimal' for `source_path,line_number,agent`
+        /// or 'summary' for `source_path,line_number,agent,title,score`. Example: --fields `source_path,line_number`
         #[arg(long, value_delimiter = ',')]
         fields: Option<Vec<String>>,
         /// Truncate content/snippet fields to max N characters (UTF-8 safe, adds '...' and _truncated indicator)
@@ -208,10 +208,13 @@ pub enum Commands {
         /// Filter to entries until ISO date
         #[arg(long)]
         until: Option<String>,
-        /// Server-side aggregation by field(s). Comma-separated: agent,workspace,date,match_type
+        /// Server-side aggregation by field(s). Comma-separated: `agent,workspace,date,match_type`
         /// Returns buckets with counts instead of full results. Use with --limit to get both.
         #[arg(long, value_delimiter = ',')]
         aggregate: Option<Vec<String>>,
+        /// Include query explanation in output (shows parsed query, index strategy, cost estimate)
+        #[arg(long)]
+        explain: bool,
     },
     /// Show statistics about indexed data
     Stats {
@@ -504,7 +507,7 @@ pub async fn run() -> CliResult<()> {
 
     if let Some(path) = &cli.trace_file {
         let duration_ms = start_instant.elapsed().as_millis();
-        let exit_code = result.as_ref().map(|_| 0).unwrap_or_else(|e| e.code);
+        let exit_code = result.as_ref().map_or_else(|e| e.code, |()| 0);
         if let Err(trace_err) = write_trace_line(
             path,
             &command_label,
@@ -700,6 +703,7 @@ async fn execute_cli(
                     since,
                     until,
                     aggregate,
+                    explain,
                 } => {
                     run_cli_search(
                         &query,
@@ -729,6 +733,7 @@ async fn execute_cli(
                             until.as_deref(),
                         ),
                         aggregate,
+                        explain,
                     )?;
                 }
                 Commands::Stats { data_dir, json } => {
@@ -853,7 +858,7 @@ fn state_meta_json(data_dir: &Path, db_path: &Path, stale_threshold: u64) -> ser
         std::fs::read_to_string(&watch_state_path)
             .ok()
             .and_then(|content| serde_json::from_str::<serde_json::Value>(&content).ok())
-            .and_then(|v| v.get("pending_count").and_then(|c| c.as_u64()))
+            .and_then(|v| v.get("pending_count").and_then(serde_json::Value::as_u64))
             .unwrap_or(0)
     } else {
         0
@@ -863,9 +868,7 @@ fn state_meta_json(data_dir: &Path, db_path: &Path, stale_threshold: u64) -> ser
         let ts_secs = ts / 1000;
         now_secs.saturating_sub(ts_secs as u64)
     });
-    let is_stale = index_age_secs
-        .map(|age| age > stale_threshold)
-        .unwrap_or(true);
+    let is_stale = index_age_secs.is_none_or(|age| age > stale_threshold);
     let fresh = index_exists && !is_stale;
 
     let ts_str = chrono::DateTime::from_timestamp(now_secs as i64, 0)
@@ -1111,49 +1114,49 @@ fn print_robot_docs(topic: RobotTopic, wrap: WrapConfig) -> CliResult<()> {
         ],
         RobotTopic::Examples => vec![
             "examples:".to_string(),
-            "".to_string(),
+            String::new(),
             "# Basic search with JSON output for agents".to_string(),
             "  cass search \"your query\" --robot".to_string(),
             "# Token-budgeted search with cursor + request-id".to_string(),
             "  cass search \"error\" --robot --max-tokens 200 --request-id run-1 --limit 2 --robot-meta".to_string(),
             "  cass search \"error\" --robot --cursor <_meta.next_cursor> --request-id run-1b --robot-meta".to_string(),
-            "".to_string(),
+            String::new(),
             "# Search with time filters".to_string(),
             "  cass search \"bug\" --today                 # today only".to_string(),
             "  cass search \"api\" --week                  # last 7 days".to_string(),
             "  cass search \"feature\" --days 30           # last 30 days".to_string(),
             "  cass search \"fix\" --since 2025-01-01      # since date".to_string(),
             "  cass search \"error\" --robot --limit 5 --offset 5  # paginate robot output".to_string(),
-            "".to_string(),
+            String::new(),
             "# Filter by agent or workspace".to_string(),
             "  cass search \"error\" --agent codex         # codex sessions only".to_string(),
             "  cass search \"test\" --workspace /myproject # specific project".to_string(),
-            "".to_string(),
+            String::new(),
             "# Follow up on search results".to_string(),
             "  cass view /path/to/session.jsonl -n 42   # view line 42 with context".to_string(),
             "  cass view /path/to/session.jsonl -n 42 -C 10  # 10 lines context".to_string(),
-            "".to_string(),
+            String::new(),
             "# Get index statistics".to_string(),
             "  cass stats --json                        # JSON stats".to_string(),
             "  cass stats                               # Human-readable stats".to_string(),
-            "".to_string(),
+            String::new(),
             "# Aggregation (overview queries - 99% token reduction)".to_string(),
             "  cass search \"error\" --json --aggregate agent    # count by agent".to_string(),
             "  cass search \"*\" --json --aggregate agent,workspace  # multi-field agg".to_string(),
             "  cass search \"bug\" --json --aggregate date --week  # time distribution".to_string(),
-            "".to_string(),
+            String::new(),
             "# Quick health check (ideal for agents)".to_string(),
             "  cass status --json                       # health check JSON".to_string(),
             "  cass status --stale-threshold 3600       # custom stale threshold (1hr)".to_string(),
-            "".to_string(),
+            String::new(),
             "# Diagnostics".to_string(),
             "  cass diag --json                         # JSON diagnostic info".to_string(),
             "  cass diag --verbose                      # Human-readable with sizes".to_string(),
-            "".to_string(),
+            String::new(),
             "# Capabilities introspection (for agent self-configuration)".to_string(),
             "  cass capabilities --json                 # JSON with version, features, limits".to_string(),
             "  cass capabilities                        # Human-readable summary".to_string(),
-            "".to_string(),
+            String::new(),
             "# Full workflow".to_string(),
             "  cass index --full                        # index all sessions".to_string(),
             "  cass search \"cma-es\" --robot             # search".to_string(),
@@ -1186,8 +1189,7 @@ fn render_schema_docs() -> Vec<String> {
     fn type_of(v: &Value) -> String {
         v.get("type")
             .and_then(Value::as_str)
-            .map(str::to_string)
-            .unwrap_or_else(|| "?".to_string())
+            .map_or_else(|| "?".to_string(), str::to_string)
     }
 
     fn render_props(
@@ -1258,7 +1260,7 @@ fn write_trace_line(
     });
 
     let mut file = OpenOptions::new().create(true).append(true).open(path)?;
-    writeln!(file, "{}", payload)?;
+    writeln!(file, "{payload}")?;
     Ok(())
 }
 
@@ -1297,7 +1299,7 @@ impl TimeFilter {
             let week_ago = now - Duration::days(7);
             (Some(week_ago.timestamp_millis()), None)
         } else if let Some(d) = days {
-            let days_ago = now - Duration::days(d as i64);
+            let days_ago = now - Duration::days(i64::from(d));
             (Some(days_ago.timestamp_millis()), None)
         } else {
             (None, None)
@@ -1433,8 +1435,9 @@ fn run_cli_search(
     _progress: ProgressResolved,
     time_filter: TimeFilter,
     aggregate: Option<Vec<String>>,
+    explain: bool,
 ) -> CliResult<()> {
-    use crate::search::query::{SearchClient, SearchFilters};
+    use crate::search::query::{QueryExplanation, SearchClient, SearchFilters};
     use crate::search::tantivy::index_dir;
     use std::collections::HashSet;
 
@@ -1499,10 +1502,13 @@ fn run_cli_search(
                 hint: Some("Cursor should be base64 of {\"offset\":N,\"limit\":M}".to_string()),
                 retryable: false,
             })?;
-        if let Some(o) = cursor_json.get("offset").and_then(|v| v.as_u64()) {
+        if let Some(o) = cursor_json
+            .get("offset")
+            .and_then(serde_json::Value::as_u64)
+        {
             offset_val = o as usize;
         }
-        if let Some(l) = cursor_json.get("limit").and_then(|v| v.as_u64()) {
+        if let Some(l) = cursor_json.get("limit").and_then(serde_json::Value::as_u64) {
             limit_val = l as usize;
         }
     }
@@ -1544,6 +1550,16 @@ fn run_cli_search(
             hint: None,
             retryable: true,
         })?;
+
+    // Build query explanation if requested
+    let explanation = if explain {
+        Some(
+            QueryExplanation::analyze(query, &filters)
+                .with_wildcard_fallback(result.wildcard_fallback),
+        )
+    } else {
+        None
+    };
 
     // Compute aggregations and create display result based on mode
     let (aggregations, display_result, total_matches) = if has_aggregation {
@@ -1634,9 +1650,7 @@ fn run_cli_search(
             let age = index_freshness
                 .as_ref()
                 .and_then(|f: &serde_json::Value| f.get("age_seconds"))
-                .and_then(|v: &serde_json::Value| v.as_u64())
-                .map(|s| format!("{s} seconds"))
-                .unwrap_or_else(|| "an unknown age".to_string());
+                .and_then(|v: &serde_json::Value| v.as_u64()).map_or_else(|| "an unknown age".to_string(), |s| format!("{s} seconds"));
             let pending = index_freshness
                 .as_ref()
                 .and_then(|f: &serde_json::Value| f.get("pending_sessions"))
@@ -1686,6 +1700,7 @@ fn run_cli_search(
             warning,
             &aggregations,
             total_matches,
+            explanation.as_ref(),
         )?;
     } else if display_result.hits.is_empty() {
         eprintln!("No results found.");
@@ -1752,13 +1767,14 @@ fn output_display_results(
                 println!("- **Workspace**: `{}`", hit.workspace);
                 println!("- **Path**: `{}`", hit.source_path);
                 if let Some(ts) = hit.created_at {
-                    let dt = chrono::DateTime::from_timestamp_millis(ts)
-                        .map(|d| d.format("%Y-%m-%d %H:%M").to_string())
-                        .unwrap_or_else(|| "unknown".to_string());
-                    println!("- **Created**: {}", dt);
+                    let dt = chrono::DateTime::from_timestamp_millis(ts).map_or_else(
+                        || "unknown".to_string(),
+                        |d| d.format("%Y-%m-%d %H:%M").to_string(),
+                    );
+                    println!("- **Created**: {dt}");
                 }
                 let snippet = apply_wrap(&hit.snippet, wrap);
-                println!("\n```\n{}\n```\n", snippet);
+                println!("\n```\n{snippet}\n```\n");
             }
         }
     }
@@ -1827,7 +1843,7 @@ fn filter_hit_fields(
     }
 }
 
-/// Truncate a string to max_len characters, UTF-8 safe, with ellipsis
+/// Truncate a string to `max_len` characters, UTF-8 safe, with ellipsis
 fn truncate_content(s: &str, max_len: usize) -> (String, bool) {
     let char_count = s.chars().count();
     if char_count <= max_len {
@@ -1836,7 +1852,7 @@ fn truncate_content(s: &str, max_len: usize) -> (String, bool) {
         // Leave room for "..." (3 chars)
         let truncate_at = max_len.saturating_sub(3);
         let truncated: String = s.chars().take(truncate_at).collect();
-        (format!("{}...", truncated), true)
+        (format!("{truncated}..."), true)
     }
 }
 
@@ -1865,10 +1881,7 @@ fn apply_content_truncation(hit: serde_json::Value, budgets: FieldBudgets) -> se
             let (truncated, was_truncated) = truncate_content(s, limit);
             if was_truncated {
                 obj.insert(field.to_string(), serde_json::Value::String(truncated));
-                obj.insert(
-                    format!("{}_truncated", field),
-                    serde_json::Value::Bool(true),
-                );
+                obj.insert(format!("{field}_truncated"), serde_json::Value::Bool(true));
             }
         }
     }
@@ -1876,7 +1889,7 @@ fn apply_content_truncation(hit: serde_json::Value, budgets: FieldBudgets) -> se
     serde_json::Value::Object(obj)
 }
 
-/// Clamp hits to an approximate token budget (4 chars ≈ 1 token). Returns (hits, est_tokens, clamped?)
+/// Clamp hits to an approximate token budget (4 chars ≈ 1 token). Returns (hits, `est_tokens`, clamped?)
 fn clamp_hits_to_budget(
     hits: Vec<serde_json::Value>,
     max_tokens: Option<usize>,
@@ -1892,7 +1905,7 @@ fn clamp_hits_to_budget(
     let budget_chars = tokens.saturating_mul(4);
     let mut acc_chars = 0usize;
     let mut kept: Vec<serde_json::Value> = Vec::new();
-    for hit in hits.into_iter() {
+    for hit in hits {
         let len = serde_json::to_string(&hit)
             .map(|s| s.chars().count())
             .unwrap_or(0);
@@ -1908,7 +1921,7 @@ fn clamp_hits_to_budget(
     let est = serde_json::to_string(&kept)
         .map(|s| s.chars().count() / 4)
         .ok();
-    let clamped = kept.len() < input_len || est.map(|e| e > tokens).unwrap_or(false);
+    let clamped = kept.len() < input_len || est.is_some_and(|e| e > tokens);
     (kept, est, clamped)
 }
 
@@ -1933,6 +1946,7 @@ fn output_robot_results(
     warning: Option<String>,
     aggregations: &Aggregations,
     total_matches: usize,
+    explanation: Option<&crate::search::query::QueryExplanation>,
 ) -> CliResult<()> {
     // Expand presets (minimal, summary, all, *)
     let resolved_fields = expand_field_presets(fields);
@@ -1950,10 +1964,10 @@ fn output_robot_results(
         clamp_hits_to_budget(filtered_hits, max_tokens);
 
     // Serialize aggregations if present
-    let agg_json = if !aggregations.is_empty() {
-        Some(serde_json::to_value(aggregations).unwrap_or_default())
-    } else {
+    let agg_json = if aggregations.is_empty() {
         None
+    } else {
+        Some(serde_json::to_value(aggregations).unwrap_or_default())
     };
 
     match format {
@@ -1984,6 +1998,14 @@ fn output_robot_results(
             // Add aggregations if present
             if let (Some(agg), serde_json::Value::Object(map)) = (&agg_json, &mut payload) {
                 map.insert("aggregations".to_string(), agg.clone());
+            }
+
+            // Add query explanation if requested
+            if let (Some(exp), serde_json::Value::Object(map)) = (explanation, &mut payload) {
+                map.insert(
+                    "explanation".to_string(),
+                    serde_json::to_value(exp).unwrap_or_default(),
+                );
             }
 
             // Add extended metadata if requested
@@ -2029,11 +2051,15 @@ fn output_robot_results(
                 hint: None,
                 retryable: false,
             })?;
-            println!("{}", out);
+            println!("{out}");
         }
         RobotFormat::Jsonl => {
             // JSONL: one object per line, optional _meta header
-            if include_meta || agg_json.is_some() || !result.suggestions.is_empty() {
+            if include_meta
+                || agg_json.is_some()
+                || !result.suggestions.is_empty()
+                || explanation.is_some()
+            {
                 let mut meta = serde_json::json!({
                     "_meta": {
                         "query": query,
@@ -2080,6 +2106,13 @@ fn output_robot_results(
                 if let (Some(agg), serde_json::Value::Object(map)) = (&agg_json, &mut meta) {
                     map.insert("aggregations".to_string(), agg.clone());
                 }
+                // Add explanation to meta line
+                if let (Some(exp), serde_json::Value::Object(map)) = (explanation, &mut meta) {
+                    map.insert(
+                        "explanation".to_string(),
+                        serde_json::to_value(exp).unwrap_or_default(),
+                    );
+                }
                 if let Some(warn) = &warning
                     && let Some(m) = meta.get_mut("_meta").and_then(|v| v.as_object_mut())
                 {
@@ -2125,6 +2158,14 @@ fn output_robot_results(
                 map.insert("aggregations".to_string(), agg.clone());
             }
 
+            // Add query explanation if requested
+            if let (Some(exp), serde_json::Value::Object(map)) = (explanation, &mut payload) {
+                map.insert(
+                    "explanation".to_string(),
+                    serde_json::to_value(exp).unwrap_or_default(),
+                );
+            }
+
             if include_meta && let serde_json::Value::Object(ref mut map) = payload {
                 let mut meta = serde_json::json!({
                     "elapsed_ms": elapsed_ms,
@@ -2161,7 +2202,7 @@ fn output_robot_results(
                 hint: None,
                 retryable: false,
             })?;
-            println!("{}", out);
+            println!("{out}");
         }
     }
 
@@ -2216,7 +2257,7 @@ fn run_stats(
     let agent_rows: Vec<(String, i64)> = agent_stmt
         .query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?)))
         .map_err(|e| CliError::unknown(format!("query: {e}")))?
-        .filter_map(|r| r.ok())
+        .filter_map(std::result::Result::ok)
         .collect();
 
     // Get workspace breakdown (top 10, need to JOIN with workspaces table)
@@ -2228,7 +2269,7 @@ fn run_stats(
     let ws_rows: Vec<(String, i64)> = ws_stmt
         .query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?)))
         .map_err(|e| CliError::unknown(format!("query: {e}")))?
-        .filter_map(|r| r.ok())
+        .filter_map(std::result::Result::ok)
         .collect();
 
     // Get date range
@@ -2269,18 +2310,18 @@ fn run_stats(
         println!("Database: {}", db_path.display());
         println!();
         println!("Totals:");
-        println!("  Conversations: {}", conversation_count);
-        println!("  Messages: {}", message_count);
+        println!("  Conversations: {conversation_count}");
+        println!("  Messages: {message_count}");
         println!();
         println!("By Agent:");
         for (agent, count) in &agent_rows {
-            println!("  {}: {}", agent, count);
+            println!("  {agent}: {count}");
         }
         println!();
         if !ws_rows.is_empty() {
             println!("Top Workspaces:");
             for (ws, count) in &ws_rows {
-                println!("  {}: {}", ws, count);
+                println!("  {ws}: {count}");
             }
             println!();
         }
@@ -2400,8 +2441,8 @@ fn run_diag(
         println!("CASS Diagnostic Report");
         println!("======================");
         println!();
-        println!("Version: {}", version);
-        println!("Platform: {} ({})", platform, arch);
+        println!("Version: {version}");
+        println!("Platform: {platform} ({arch})");
         println!();
         println!("Paths:");
         println!("  Data directory: {}", data_dir.display());
@@ -2414,8 +2455,8 @@ fn run_diag(
             if verbose {
                 println!("  Size: {}", format_bytes(db_size));
             }
-            println!("  Conversations: {}", conversation_count);
-            println!("  Messages: {}", message_count);
+            println!("  Conversations: {conversation_count}");
+            println!("  Messages: {message_count}");
         } else {
             println!("  Status: NOT FOUND");
             println!("  Hint: Run 'cass index --full' to create the database");
@@ -2449,7 +2490,7 @@ fn fs_dir_size(path: &std::path::Path) -> u64 {
     std::fs::read_dir(path)
         .map(|entries| {
             entries
-                .filter_map(|e| e.ok())
+                .filter_map(std::result::Result::ok)
                 .map(|e| {
                     let p = e.path();
                     if p.is_dir() {
@@ -2475,7 +2516,7 @@ fn format_bytes(bytes: u64) -> String {
     } else if bytes >= KB {
         format!("{:.2} KB", bytes as f64 / KB as f64)
     } else {
-        format!("{} bytes", bytes)
+        format!("{bytes} bytes")
     }
 }
 
@@ -2559,16 +2600,14 @@ fn run_status(
         let ts_secs = ts / 1000; // Convert millis to secs
         now_secs.saturating_sub(ts_secs as u64)
     });
-    let is_stale = index_age_secs
-        .map(|age| age > stale_threshold)
-        .unwrap_or(true);
+    let is_stale = index_age_secs.is_none_or(|age| age > stale_threshold);
 
     // Check for pending sessions from watch_state.json
     let pending_sessions = if watch_state_path.exists() {
         std::fs::read_to_string(&watch_state_path)
             .ok()
             .and_then(|content| serde_json::from_str::<serde_json::Value>(&content).ok())
-            .and_then(|v| v.get("pending_count").and_then(|c| c.as_u64()))
+            .and_then(|v| v.get("pending_count").and_then(serde_json::Value::as_u64))
             .unwrap_or(0)
     } else {
         0
@@ -2584,13 +2623,12 @@ fn run_status(
         Some("Run 'cass index --full' to rebuild the search index".to_string())
     } else if is_stale || pending_sessions > 0 {
         let pending_msg = if pending_sessions > 0 {
-            format!(" ({} sessions pending)", pending_sessions)
+            format!(" ({pending_sessions} sessions pending)")
         } else {
             String::new()
         };
         Some(format!(
-            "Run 'cass index' to refresh the index{}",
-            pending_msg
+            "Run 'cass index' to refresh the index{pending_msg}"
         ))
     } else {
         None
@@ -2634,7 +2672,7 @@ fn run_status(
             "Attention needed"
         };
 
-        println!("{} CASS Status: {}", status_icon, status_word);
+        println!("{status_icon} CASS Status: {status_word}");
         println!();
 
         // Index info
@@ -2642,7 +2680,7 @@ fn run_status(
         if index_exists {
             if let Some(age) = index_age_secs {
                 let age_str = if age < 60 {
-                    format!("{} seconds ago", age)
+                    format!("{age} seconds ago")
                 } else if age < 3600 {
                     format!("{} minutes ago", age / 60)
                 } else if age < 86400 {
@@ -2651,7 +2689,7 @@ fn run_status(
                     format!("{} days ago", age / 86400)
                 };
                 let stale_indicator = if is_stale { " (stale)" } else { "" };
-                println!("  Last indexed: {}{}", age_str, stale_indicator);
+                println!("  Last indexed: {age_str}{stale_indicator}");
             } else {
                 println!("  Last indexed: unknown");
             }
@@ -2663,8 +2701,8 @@ fn run_status(
         println!();
         println!("Database:");
         if db_exists {
-            println!("  Conversations: {}", conversation_count);
-            println!("  Messages: {}", message_count);
+            println!("  Conversations: {conversation_count}");
+            println!("  Messages: {message_count}");
         } else {
             println!("  Not found");
         }
@@ -2672,13 +2710,13 @@ fn run_status(
         // Pending
         if pending_sessions > 0 {
             println!();
-            println!("Pending: {} sessions awaiting indexing", pending_sessions);
+            println!("Pending: {pending_sessions} sessions awaiting indexing");
         }
 
         // Recommended action
         if let Some(action) = &recommended_action {
             println!();
-            println!("Recommended: {}", action);
+            println!("Recommended: {action}");
         }
     }
 
@@ -2767,7 +2805,7 @@ pub struct ArgumentSchema {
     /// Default value if any
     #[serde(skip_serializing_if = "Option::is_none")]
     pub default: Option<String>,
-    /// Enum values if value_type is "enum"
+    /// Enum values if `value_type` is "enum"
     #[serde(skip_serializing_if = "Option::is_none")]
     pub enum_values: Option<Vec<String>>,
     /// Whether option can be repeated
@@ -2944,12 +2982,12 @@ fn run_capabilities(json: bool) -> CliResult<()> {
         println!();
         println!("Features:");
         for feature in &response.features {
-            println!("  - {}", feature);
+            println!("  - {feature}");
         }
         println!();
         println!("Connectors:");
         for connector in &response.connectors {
-            println!("  - {}", connector);
+            println!("  - {connector}");
         }
         println!();
         println!("Limits:");
@@ -2999,18 +3037,18 @@ fn run_introspect(json: bool) -> CliResult<()> {
             let default = flag
                 .default
                 .as_ref()
-                .map(|d| format!(" [default: {}]", d))
+                .map(|d| format!(" [default: {d}]"))
                 .unwrap_or_default();
             let enum_values = flag
                 .enum_values
                 .as_ref()
                 .map(|vals| format!(" [values: {}]", vals.join(",")))
                 .unwrap_or_default();
-            let short = flag.short.map(|s| format!("-{}, ", s)).unwrap_or_default();
+            let short = flag.short.map(|s| format!("-{s}, ")).unwrap_or_default();
             let prefix = if flag.arg_type == "positional" {
-                "".to_string()
+                String::new()
             } else {
-                format!("{}--", short)
+                format!("{short}--")
             };
             println!(
                 "  {}{}: {}{}{}{}",
@@ -3033,13 +3071,13 @@ fn run_introspect(json: bool) -> CliResult<()> {
                     let default = arg
                         .default
                         .as_ref()
-                        .map(|d| format!(" [default: {}]", d))
+                        .map(|d| format!(" [default: {d}]"))
                         .unwrap_or_default();
-                    let short = arg.short.map(|s| format!("-{}, ", s)).unwrap_or_default();
+                    let short = arg.short.map(|s| format!("-{s}, ")).unwrap_or_default();
                     let prefix = if arg.arg_type == "positional" {
-                        "".to_string()
+                        String::new()
                     } else {
-                        format!("{}--", short)
+                        format!("{short}--")
                     };
                     println!(
                         "      {}{}: {}{}{}",
@@ -3054,7 +3092,7 @@ fn run_introspect(json: bool) -> CliResult<()> {
             response.response_schemas.len()
         );
         for name in response.response_schemas.keys() {
-            println!("  - {}", name);
+            println!("  - {name}");
         }
     }
 
@@ -3079,7 +3117,7 @@ fn run_api_version(json: bool) -> CliResult<()> {
         println!("================");
         println!("crate: {}", env!("CARGO_PKG_VERSION"));
         println!("api:   v{}", 1);
-        println!("contract: v{}", CONTRACT_VERSION);
+        println!("contract: v{CONTRACT_VERSION}");
     }
 
     Ok(())
@@ -3099,7 +3137,7 @@ fn command_schema_from_clap(cmd: &Command) -> CommandSchema {
         description: cmd
             .get_about()
             .or_else(|| cmd.get_long_about())
-            .map(|s| s.to_string())
+            .map(std::string::ToString::to_string)
             .unwrap_or_default(),
         arguments: cmd
             .get_arguments()
@@ -3146,15 +3184,15 @@ fn argument_schema_from_clap(arg: &Arg) -> ArgumentSchema {
     };
 
     ArgumentSchema {
-        name: arg
-            .get_long()
-            .map(|s| s.to_string())
-            .unwrap_or_else(|| arg.get_id().as_str().to_string()),
+        name: arg.get_long().map_or_else(
+            || arg.get_id().as_str().to_string(),
+            std::string::ToString::to_string,
+        ),
         short: arg.get_short(),
         description: arg
             .get_help()
             .or_else(|| arg.get_long_help())
-            .map(|s| s.to_string())
+            .map(std::string::ToString::to_string)
             .unwrap_or_default(),
         arg_type,
         value_type,
@@ -3177,10 +3215,10 @@ const INTEGER_ARG_NAMES: &[&str] = &[
 ];
 
 fn infer_value_type(arg: &Arg) -> Option<String> {
-    let name = arg
-        .get_long()
-        .map(|s| s.to_string())
-        .unwrap_or_else(|| arg.get_id().as_str().to_string());
+    let name = arg.get_long().map_or_else(
+        || arg.get_id().as_str().to_string(),
+        std::string::ToString::to_string,
+    );
 
     if !arg.get_possible_values().is_empty() {
         return Some("enum".to_string());
@@ -3752,7 +3790,7 @@ fn run_view(path: &PathBuf, line: Option<usize>, context: usize, json: bool) -> 
     } else {
         println!("File: {}", path.display());
         if highlight_line {
-            println!("Line: {} (context: {})", target_line, context);
+            println!("Line: {target_line} (context: {context})");
         }
         println!("----------------------------------------");
         for (i, l) in lines.iter().enumerate().skip(start).take(end - start) {
@@ -3762,7 +3800,7 @@ fn run_view(path: &PathBuf, line: Option<usize>, context: usize, json: bool) -> 
             } else {
                 " "
             };
-            println!("{}{:5} | {}", marker, line_num, l);
+            println!("{marker}{line_num:5} | {l}");
         }
         println!("----------------------------------------");
         if lines.len() > end {
@@ -3830,14 +3868,14 @@ fn run_index_with_data(
         data_dir: data_dir.clone(),
         progress: None,
     };
-    let spinner = if !json {
+    let spinner = if json {
+        None
+    } else {
         match progress {
             ProgressResolved::Bars => Some(indicatif::ProgressBar::new_spinner()),
             ProgressResolved::Plain => None,
             ProgressResolved::None => None,
         }
-    } else {
-        None
     };
     if let Some(pb) = &spinner {
         pb.set_message(if full { "index --full" } else { "index" });
@@ -3849,7 +3887,7 @@ fn run_index_with_data(
             watch,
             watch_once_paths
                 .as_ref()
-                .map(|p| p.len())
+                .map(std::vec::Vec::len)
                 .unwrap_or_default()
         );
     }
@@ -3859,7 +3897,7 @@ fn run_index_with_data(
     let res = indexer::run_index(opts, None).map_err(|e| {
         let chain = e
             .chain()
-            .map(|c| c.to_string())
+            .map(std::string::ToString::to_string)
             .collect::<Vec<_>>()
             .join(" | ");
         CliError {
@@ -3969,8 +4007,7 @@ async fn maybe_prompt_for_update(once: bool) -> Result<()> {
     }
 
     println!(
-        "A newer version is available: current v{}, latest {}. Update now? (y/N): ",
-        current_ver, latest_tag
+        "A newer version is available: current v{current_ver}, latest {latest_tag}. Update now? (y/N): "
     );
     print!("> ");
     io::stdout().flush().ok();

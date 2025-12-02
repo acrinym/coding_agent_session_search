@@ -310,7 +310,6 @@ fn introspect_matches_golden_contract() {
     let expected = read_fixture("introspect.json");
     assert_eq!(actual, expected, "introspect contract drifted");
 }
-
 #[test]
 fn color_never_has_no_ansi() {
     let mut cmd = base_cmd();

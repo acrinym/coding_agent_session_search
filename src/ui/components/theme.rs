@@ -113,7 +113,7 @@ pub mod colors {
     /// Amp - subtle warm tint
     pub const AGENT_AMP_BG: Color = Color::Rgb(34, 28, 30); // warm tint
 
-    /// OpenCode - neutral
+    /// `OpenCode` - neutral
     pub const AGENT_OPENCODE_BG: Color = Color::Rgb(30, 31, 36); // neutral
 
     // ═══════════════════════════════════════════════════════════════════════════
@@ -454,7 +454,7 @@ impl ThemePalette {
         Style::default().fg(color)
     }
 
-    /// Get a complete RoleTheme for a message role with full styling options.
+    /// Get a complete `RoleTheme` for a message role with full styling options.
     ///
     /// Includes foreground, background tint, border, and badge colors for
     /// comprehensive role-aware message rendering.
@@ -606,7 +606,7 @@ pub fn relative_luminance(color: Color) -> f64 {
     };
 
     fn linearize(c: u8) -> f64 {
-        let c = c as f64 / 255.0;
+        let c = f64::from(c) / 255.0;
         if c <= 0.04045 {
             c / 12.92
         } else {
@@ -769,7 +769,7 @@ impl ThemePreset {
         }
     }
 
-    /// Convert this preset to its ThemePalette
+    /// Convert this preset to its `ThemePalette`
     pub fn to_palette(self) -> ThemePalette {
         match self {
             Self::Dark => ThemePalette::dark(),
@@ -796,7 +796,7 @@ impl ThemePreset {
 
 impl ThemePalette {
     /// Catppuccin Mocha theme - warm, pastel colors
-    /// https://github.com/catppuccin/catppuccin
+    /// <https://github.com/catppuccin/catppuccin>
     pub fn catppuccin() -> Self {
         Self {
             // Catppuccin Mocha palette
@@ -817,7 +817,7 @@ impl ThemePalette {
     }
 
     /// Dracula theme - purple-tinted dark theme
-    /// https://draculatheme.com/
+    /// <https://draculatheme.com>/
     pub fn dracula() -> Self {
         Self {
             // Dracula palette
@@ -838,7 +838,7 @@ impl ThemePalette {
     }
 
     /// Nord theme - arctic, cool blue tones
-    /// https://www.nordtheme.com/
+    /// <https://www.nordtheme.com>/
     pub fn nord() -> Self {
         Self {
             // Nord palette

@@ -3,7 +3,10 @@ use std::sync::atomic::{AtomicI64, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use anyhow::{Result, anyhow};
-use tantivy::schema::*;
+use tantivy::schema::{
+    FAST, Field, INDEXED, IndexRecordOption, STORED, STRING, Schema, TEXT, TextFieldIndexing,
+    TextOptions,
+};
 use tantivy::{Index, IndexReader, IndexWriter, doc};
 use tracing::{debug, info, warn};
 
@@ -94,10 +97,7 @@ impl TantivyIndex {
 
         ensure_tokenizer(&mut index);
 
-        std::fs::write(
-            &meta_path,
-            format!("{{\"schema_hash\":\"{}\"}}", SCHEMA_HASH),
-        )?;
+        std::fs::write(&meta_path, format!("{{\"schema_hash\":\"{SCHEMA_HASH}\"}}"))?;
 
         let writer = index
             .writer(50_000_000)
@@ -316,7 +316,7 @@ pub fn fields_from_schema(schema: &Schema) -> Result<Fields> {
     let get = |name: &str| {
         schema
             .get_field(name)
-            .map_err(|_| anyhow!("schema missing {}", name))
+            .map_err(|_| anyhow!("schema missing {name}"))
     };
     Ok(Fields {
         agent: get("agent")?,

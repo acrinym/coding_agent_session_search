@@ -137,7 +137,7 @@ fn claude_connector_extracts_model_as_author() {
     assert_eq!(assistant.author, Some("claude-sonnet-4".to_string()));
 }
 
-/// Test tool_use blocks are flattened
+/// Test `tool_use` blocks are flattened
 #[test]
 fn claude_connector_flattens_tool_use() {
     let dir = create_claude_temp();
@@ -388,7 +388,7 @@ fn claude_connector_handles_empty_directory() {
     assert!(convs.is_empty());
 }
 
-/// Test external_id is filename
+/// Test `external_id` is filename
 #[test]
 fn claude_connector_sets_external_id() {
     let dir = create_claude_temp();
@@ -413,7 +413,7 @@ fn claude_connector_sets_external_id() {
     );
 }
 
-/// Test source_path is set correctly
+/// Test `source_path` is set correctly
 #[test]
 fn claude_connector_sets_source_path() {
     let dir = create_claude_temp();

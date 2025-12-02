@@ -47,19 +47,16 @@ impl Connector for ClineConnector {
         let root = if ctx
             .data_root
             .file_name()
-            .map(|n| n.to_str().unwrap_or("").contains("claude-dev"))
-            .unwrap_or(false)
+            .is_some_and(|n| n.to_str().unwrap_or("").contains("claude-dev"))
             || fs::read_dir(&ctx.data_root)
                 .map(|mut d| {
                     d.any(|e| {
-                        e.ok()
-                            .map(|e| {
-                                let p = e.path();
-                                p.is_dir()
-                                    && (p.join("ui_messages.json").exists()
-                                        || p.join("api_conversation_history.json").exists())
-                            })
-                            .unwrap_or(false)
+                        e.ok().is_some_and(|e| {
+                            let p = e.path();
+                            p.is_dir()
+                                && (p.join("ui_messages.json").exists()
+                                    || p.join("api_conversation_history.json").exists())
+                        })
                     })
                 })
                 .unwrap_or(false)
@@ -82,7 +79,7 @@ impl Connector for ClineConnector {
             let task_id = path
                 .file_name()
                 .and_then(|s| s.to_str())
-                .map(|s| s.to_string());
+                .map(std::string::ToString::to_string);
             if task_id.as_deref() == Some("taskHistory.json") {
                 continue;
             }
@@ -181,7 +178,7 @@ impl Connector for ClineConnector {
                 title = v
                     .get("title")
                     .and_then(|t| t.as_str())
-                    .map(|s| s.to_string());
+                    .map(std::string::ToString::to_string);
                 // Try to find workspace path
                 // Cline doesn't standardize this in metadata, but sometimes it's there or in state.
                 // We check common keys.

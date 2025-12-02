@@ -158,28 +158,23 @@ fn multi_connector_pipeline() {
 
     assert!(
         found_agents.contains("codex"),
-        "Missing codex hit. Found: {:?}",
-        found_agents
+        "Missing codex hit. Found: {found_agents:?}"
     );
     assert!(
         found_agents.contains("claude_code"),
-        "Missing claude hit. Found: {:?}",
-        found_agents
+        "Missing claude hit. Found: {found_agents:?}"
     );
     assert!(
         found_agents.contains("gemini"),
-        "Missing gemini hit. Found: {:?}",
-        found_agents
+        "Missing gemini hit. Found: {found_agents:?}"
     );
     assert!(
         found_agents.contains("cline"),
-        "Missing cline hit. Found: {:?}",
-        found_agents
+        "Missing cline hit. Found: {found_agents:?}"
     );
     assert!(
         found_agents.contains("amp"),
-        "Missing amp hit. Found: {:?}",
-        found_agents
+        "Missing amp hit. Found: {found_agents:?}"
     );
 
     // 3. INCREMENTAL TEST
@@ -197,8 +192,7 @@ fn multi_connector_pipeline() {
 
     // Use modern envelope format
     let content = format!(
-        r#"{{"type": "event_msg", "timestamp": {}, "payload": {{"type": "user_message", "message": "codex_new"}}}}"#,
-        now_ts
+        r#"{{"type": "event_msg", "timestamp": {now_ts}, "payload": {{"type": "user_message", "message": "codex_new"}}}}"#
     );
     fs::write(sessions.join("rollout-2.jsonl"), content).unwrap();
 
@@ -354,20 +348,16 @@ fn multi_connector_codex_and_claude() {
         .expect("hits array");
 
     // Should have hits from both connectors
-    let agents: std::collections::HashSet<_> = hits
-        .iter()
-        .filter_map(|h| h["agent"].as_str())
-        .collect();
+    let agents: std::collections::HashSet<_> =
+        hits.iter().filter_map(|h| h["agent"].as_str()).collect();
 
     assert!(
         agents.contains("codex"),
-        "Should find codex results. Agents found: {:?}",
-        agents
+        "Should find codex results. Agents found: {agents:?}"
     );
     assert!(
         agents.contains("claude_code"),
-        "Should find claude_code results. Agents found: {:?}",
-        agents
+        "Should find claude_code results. Agents found: {agents:?}"
     );
     assert!(
         hits.len() >= 2,
@@ -528,10 +518,7 @@ fn multi_connector_unique_content() {
         .and_then(|h| h.as_array())
         .expect("hits array");
 
-    assert!(
-        !codex_hits.is_empty(),
-        "Should find codex-specific content"
-    );
+    assert!(!codex_hits.is_empty(), "Should find codex-specific content");
     assert!(
         codex_hits.iter().all(|h| h["agent"] == "codex"),
         "Codex-specific search should only return codex results"
@@ -657,13 +644,11 @@ fn multi_connector_aggregation() {
 
     assert!(
         agent_keys.contains("codex"),
-        "Agent aggregation should include codex. Keys: {:?}",
-        agent_keys
+        "Agent aggregation should include codex. Keys: {agent_keys:?}"
     );
     assert!(
         agent_keys.contains("claude_code"),
-        "Agent aggregation should include claude_code. Keys: {:?}",
-        agent_keys
+        "Agent aggregation should include claude_code. Keys: {agent_keys:?}"
     );
 }
 
@@ -779,10 +764,7 @@ fn multi_connector_incremental_index() {
         has_initial,
         "Should still have initial sessions after incremental index"
     );
-    assert!(
-        has_new,
-        "Should have new sessions after incremental index"
-    );
+    assert!(has_new, "Should have new sessions after incremental index");
 }
 
 /// Test: Multiple agent filter works correctly
@@ -801,14 +783,14 @@ fn multi_connector_multiple_agent_filter() {
     make_codex_session(
         &codex_home,
         "2024/11/20",
-        "rollout-multi-agent.jsonl",
+        "rollout-maf.jsonl",
         "multiagent codex_content",
         1732118400000,
     );
     make_claude_session(
         &claude_home,
         "multi-agent-project",
-        "session-multi-agent.jsonl",
+        "session-maf.jsonl",
         "multiagent claude_content",
         "2024-11-20T10:00:00Z",
     );
@@ -820,6 +802,42 @@ fn multi_connector_multiple_agent_filter() {
         .env("HOME", home)
         .assert()
         .success();
+
+    // First, verify both connectors indexed - search without filter
+    let debug_output = cargo_bin_cmd!("cass")
+        .args(["search", "multiagent", "--robot", "--data-dir"])
+        .arg(&data_dir)
+        .env("HOME", home)
+        .output()
+        .expect("debug search command");
+    eprintln!(
+        "DEBUG unfiltered search stdout: {}",
+        String::from_utf8_lossy(&debug_output.stdout)
+    );
+    eprintln!(
+        "DEBUG unfiltered search stderr: {}",
+        String::from_utf8_lossy(&debug_output.stderr)
+    );
+    let debug_json: serde_json::Value =
+        serde_json::from_slice(&debug_output.stdout).expect("valid json");
+    let debug_hits = debug_json
+        .get("hits")
+        .and_then(|h| h.as_array())
+        .expect("hits array");
+    let debug_agents: std::collections::HashSet<_> = debug_hits
+        .iter()
+        .filter_map(|h| h["agent"].as_str())
+        .collect();
+    eprintln!("DEBUG unfiltered agents found: {debug_agents:?}");
+
+    // If only one agent indexed, fail with detailed info
+    assert!(
+        debug_agents.len() >= 2,
+        "DEBUG: Only {} agent(s) indexed: {:?}. Full response: {}",
+        debug_agents.len(),
+        debug_agents,
+        String::from_utf8_lossy(&debug_output.stdout)
+    );
 
     // Filter by multiple agents (both codex and claude_code)
     let output = cargo_bin_cmd!("cass")
@@ -838,6 +856,15 @@ fn multi_connector_multiple_agent_filter() {
         .output()
         .expect("search command");
 
+    eprintln!(
+        "DEBUG filtered search stdout: {}",
+        String::from_utf8_lossy(&output.stdout)
+    );
+    eprintln!(
+        "DEBUG filtered search stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
     assert!(output.status.success());
     let json: serde_json::Value = serde_json::from_slice(&output.stdout).expect("valid json");
     let hits = json
@@ -846,15 +873,12 @@ fn multi_connector_multiple_agent_filter() {
         .expect("hits array");
 
     // Should have hits from both specified agents
-    let agents: std::collections::HashSet<_> = hits
-        .iter()
-        .filter_map(|h| h["agent"].as_str())
-        .collect();
+    let agents: std::collections::HashSet<_> =
+        hits.iter().filter_map(|h| h["agent"].as_str()).collect();
 
     assert!(
         agents.len() == 2 && agents.contains("codex") && agents.contains("claude_code"),
-        "Should find results from both specified agents. Found: {:?}",
-        agents
+        "Should find results from both specified agents. Found: {agents:?}"
     );
 }
 

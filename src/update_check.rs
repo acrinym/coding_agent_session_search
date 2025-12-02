@@ -267,9 +267,10 @@ async fn fetch_latest_release() -> Result<GitHubRelease> {
 
 /// Get path to update state file
 fn state_path() -> PathBuf {
-    directories::ProjectDirs::from("com", "coding-agent-search", "coding-agent-search")
-        .map(|dirs| dirs.data_dir().join("update_state.json"))
-        .unwrap_or_else(|| PathBuf::from("update_state.json"))
+    directories::ProjectDirs::from("com", "coding-agent-search", "coding-agent-search").map_or_else(
+        || PathBuf::from("update_state.json"),
+        |dirs| dirs.data_dir().join("update_state.json"),
+    )
 }
 
 /// Current unix timestamp
@@ -284,7 +285,7 @@ fn now_unix() -> i64 {
 // Synchronous API for TUI (blocking HTTP)
 // ============================================================================
 
-/// Synchronous version of check_for_updates for use in sync TUI code.
+/// Synchronous version of `check_for_updates` for use in sync TUI code.
 /// Uses reqwest blocking client with short timeout.
 pub fn check_for_updates_sync(current_version: &str) -> Option<UpdateInfo> {
     let mut state = UpdateState::load();

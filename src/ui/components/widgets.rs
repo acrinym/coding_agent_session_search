@@ -27,7 +27,7 @@ pub fn search_bar(
     // Title and border styling based on input mode
     let (title_text, title_style, border_style) = match input_mode {
         InputMode::Query => (
-            format!(" Search · {} ", mode_label),
+            format!(" Search · {mode_label} "),
             palette.title(),
             palette.border_style(),
         ),
@@ -94,7 +94,7 @@ pub fn search_bar(
     let prompt = if in_query_mode { "/" } else { "›" };
 
     first_line.push(Span::styled(
-        format!("{} ", prompt),
+        format!("{prompt} "),
         Style::default().fg(palette.hint),
     ));
     first_line.push(Span::styled(query.to_string(), query_style));
@@ -152,7 +152,7 @@ pub fn search_bar(
 }
 
 /// Creates a premium-styled block with consistent theming.
-pub fn themed_block<'a>(title: &'a str, palette: ThemePalette, focused: bool) -> Block<'a> {
+pub fn themed_block(title: &str, palette: ThemePalette, focused: bool) -> Block<'_> {
     let border_style = if focused {
         palette.border_focus_style()
     } else {
@@ -166,7 +166,7 @@ pub fn themed_block<'a>(title: &'a str, palette: ThemePalette, focused: bool) ->
     };
 
     Block::default()
-        .title(Span::styled(format!(" {} ", title), title_style))
+        .title(Span::styled(format!(" {title} "), title_style))
         .borders(Borders::ALL)
         .border_style(border_style)
 }
@@ -208,7 +208,7 @@ pub fn filter_chips(
     }
 
     if let Some(time) = time_range {
-        spans.push(Span::styled(format!("[{}]", time), chip_base));
+        spans.push(Span::styled(format!("[{time}]"), chip_base));
         spans.push(Span::raw(" "));
     }
 
@@ -250,7 +250,7 @@ pub fn score_indicator(score: f32, palette: ThemePalette) -> Vec<Span<'static>> 
         ),
         Span::raw(" "),
         Span::styled(
-            format!("{:.1}", score),
+            format!("{score:.1}"),
             Style::default().fg(color).add_modifier(modifier),
         ),
     ]

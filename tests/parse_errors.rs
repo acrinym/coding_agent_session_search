@@ -155,7 +155,7 @@ fn claude_handles_binary_in_content() {
 }
 
 /// Invalid UTF-8 sequence - connector returns error (expected behavior)
-/// Note: The connector uses fs::read_to_string which fails on invalid UTF-8.
+/// Note: The connector uses `fs::read_to_string` which fails on invalid UTF-8.
 /// This is acceptable behavior - corrupted files are rare in practice.
 #[test]
 fn claude_returns_error_on_invalid_utf8() {
@@ -333,7 +333,7 @@ fn codex_skips_invalid_json() {
     );
 }
 
-/// Codex file with missing events/response_items
+/// Codex file with missing `events/response_items`
 #[test]
 fn codex_handles_missing_events() {
     let tmp = TempDir::new().unwrap();
@@ -465,8 +465,7 @@ fn claude_handles_extremely_long_content() {
     // Create a very long content string (1MB)
     let long_content = "x".repeat(1_000_000);
     let sample = format!(
-        r#"{{"type":"user","message":{{"role":"user","content":"{}"}},"timestamp":"2025-11-12T18:31:18.000Z"}}"#,
-        long_content
+        r#"{{"type":"user","message":{{"role":"user","content":"{long_content}"}},"timestamp":"2025-11-12T18:31:18.000Z"}}"#
     );
     fs::write(&file, sample).unwrap();
 
@@ -491,11 +490,10 @@ fn claude_handles_deeply_nested_json() {
     // Create nested structure (100 levels deep)
     let mut nested = String::from("\"innermost\"");
     for _ in 0..100 {
-        nested = format!("{{\"nested\":{}}}", nested);
+        nested = format!("{{\"nested\":{nested}}}");
     }
     let sample = format!(
-        r#"{{"type":"user","message":{{"role":"user","content":{}}},"timestamp":"2025-11-12T18:31:18.000Z"}}"#,
-        nested
+        r#"{{"type":"user","message":{{"role":"user","content":{nested}}},"timestamp":"2025-11-12T18:31:18.000Z"}}"#
     );
     fs::write(&file, sample).unwrap();
 

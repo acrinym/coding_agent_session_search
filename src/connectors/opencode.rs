@@ -164,9 +164,13 @@ fn load_db(
         {
             continue;
         }
-        if let Some(id) = msg.extra.get("session_id").and_then(|v| v.as_i64()) {
+        if let Some(id) = msg
+            .extra
+            .get("session_id")
+            .and_then(serde_json::Value::as_i64)
+        {
             by_session.entry(id).or_default().push(msg);
-        } else if let Some(id) = msg.extra.get("task_id").and_then(|v| v.as_i64()) {
+        } else if let Some(id) = msg.extra.get("task_id").and_then(serde_json::Value::as_i64) {
             by_session.entry(id).or_default().push(msg);
         } else {
             fallback_messages.push(msg);
@@ -203,7 +207,7 @@ fn load_db(
             messages
                 .first()
                 .and_then(|m| m.content.lines().next())
-                .map(|s| s.to_string())
+                .map(std::string::ToString::to_string)
         });
         let started_at = meta
             .and_then(|m| m.started_at)
@@ -212,7 +216,7 @@ fn load_db(
 
         convs.push(NormalizedConversation {
             agent_slug: "opencode".into(),
-            external_id: Some(format!("session-{session_id}-{:x}", db_hash)),
+            external_id: Some(format!("session-{session_id}-{db_hash:x}")),
             title,
             workspace: meta.and_then(|m| m.workspace.clone()),
             source_path: db_path.clone(),
@@ -236,7 +240,7 @@ fn load_db(
             title: fallback_messages
                 .first()
                 .and_then(|m| m.content.lines().next())
-                .map(|s| s.to_string()),
+                .map(std::string::ToString::to_string),
             workspace: None,
             source_path: db_path.clone(),
             started_at: fallback_messages.first().and_then(|m| m.created_at),
@@ -413,9 +417,7 @@ fn sqlite_value_to_json(v: rusqlite::types::Value) -> serde_json::Value {
 
 fn get_opt_string(row: &Row<'_>, cols: &[String], name: &str) -> rusqlite::Result<Option<String>> {
     if let Some(idx) = cols.iter().position(|c| c == name) {
-        return row
-            .get::<_, Option<String>>(idx)
-            .map(|s| s.map(|v| v.to_string()));
+        return row.get::<_, Option<String>>(idx);
     }
     Ok(None)
 }

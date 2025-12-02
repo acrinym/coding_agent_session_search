@@ -45,8 +45,7 @@ fn search_client_caches_repeated_queries() {
     let stats2 = client.cache_stats();
     assert!(
         stats2.cache_hits >= 1,
-        "Should have at least 1 cache hit (stats: {:?})",
-        stats2
+        "Should have at least 1 cache hit (stats: {stats2:?})"
     );
 }
 
@@ -85,7 +84,6 @@ fn search_client_prefix_cache_works() {
     // is strictly checking >= limit.
     assert!(
         stats.cache_hits > 0,
-        "Should hit cache for 'appl' using 'app' entry (stats: {:?})",
-        stats
+        "Should hit cache for 'appl' using 'app' entry (stats: {stats:?})"
     );
 }

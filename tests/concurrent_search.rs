@@ -30,13 +30,13 @@ fn concurrent_10_simultaneous_searches() {
     // Seed index with diverse content for different searches
     for i in 0..20 {
         let conv = util::ConversationFixtureBuilder::new("tester")
-            .title(format!("conversation_{}", i))
-            .source_path(dir.path().join(format!("log_{}.jsonl", i)))
-            .base_ts(1000 + i as i64)
+            .title(format!("conversation_{i}"))
+            .source_path(dir.path().join(format!("log_{i}.jsonl")))
+            .base_ts(1000 + i64::from(i))
             .messages(3)
-            .with_content(0, format!("unique_term_{} alpha beta gamma", i))
-            .with_content(1, format!("search_target_{} delta epsilon", i))
-            .with_content(2, format!("concurrent_test_{} zeta eta", i))
+            .with_content(0, format!("unique_term_{i} alpha beta gamma"))
+            .with_content(1, format!("search_target_{i} delta epsilon"))
+            .with_content(2, format!("concurrent_test_{i} zeta eta"))
             .build_normalized();
 
         index.add_conversation(&conv).unwrap();
@@ -87,16 +87,14 @@ fn concurrent_10_simultaneous_searches() {
     assert_eq!(
         success_count.load(Ordering::Relaxed),
         10,
-        "All 10 concurrent searches should succeed. Results: {:?}",
-        results
+        "All 10 concurrent searches should succeed. Results: {results:?}"
     );
 
     // Verify reasonable latency (all should complete within 5 seconds)
     for (hit_count, elapsed) in &results {
         assert!(
             *elapsed < Duration::from_secs(5),
-            "Search took too long: {:?}",
-            elapsed
+            "Search took too long: {elapsed:?}"
         );
         assert!(*hit_count > 0, "Search should return results");
     }
@@ -151,11 +149,11 @@ fn concurrent_search_during_indexing() {
     // Index more documents while searches are happening
     for i in 0..50 {
         let conv = util::ConversationFixtureBuilder::new("tester")
-            .title(format!("added_{}", i))
-            .source_path(dir.path().join(format!("added_{}.jsonl", i)))
-            .base_ts(2000 + i as i64)
+            .title(format!("added_{i}"))
+            .source_path(dir.path().join(format!("added_{i}.jsonl")))
+            .base_ts(2000 + i64::from(i))
             .messages(1)
-            .with_content(0, format!("new_content_{} searchable_term", i))
+            .with_content(0, format!("new_content_{i} searchable_term"))
             .build_normalized();
 
         index.add_conversation(&conv).unwrap();
@@ -181,8 +179,7 @@ fn concurrent_search_during_indexing() {
     );
     assert_eq!(
         total_searches, successful_searches,
-        "All {} searches should succeed during indexing, but only {} did",
-        total_searches, successful_searches
+        "All {total_searches} searches should succeed during indexing, but only {successful_searches} did"
     );
 }
 
@@ -258,8 +255,7 @@ fn concurrent_cache_contention() {
     assert_eq!(
         success_count.load(Ordering::Relaxed),
         20,
-        "All 20 concurrent accesses should succeed. Results: {:?}",
-        results
+        "All 20 concurrent accesses should succeed. Results: {results:?}"
     );
 }
 
@@ -272,15 +268,15 @@ fn concurrent_reader_handle_exhaustion() {
     // Seed index with substantial content
     for i in 0..100 {
         let conv = util::ConversationFixtureBuilder::new("tester")
-            .title(format!("stress_test_{}", i))
-            .source_path(dir.path().join(format!("stress_{}.jsonl", i)))
-            .base_ts(1000 + i as i64)
+            .title(format!("stress_test_{i}"))
+            .source_path(dir.path().join(format!("stress_{i}.jsonl")))
+            .base_ts(1000 + i64::from(i))
             .messages(5)
-            .with_content(0, format!("stress_content_{} alpha", i))
-            .with_content(1, format!("heavy_load_{} beta", i))
-            .with_content(2, format!("concurrent_access_{} gamma", i))
-            .with_content(3, format!("reader_test_{} delta", i))
-            .with_content(4, format!("exhaustion_check_{} epsilon", i))
+            .with_content(0, format!("stress_content_{i} alpha"))
+            .with_content(1, format!("heavy_load_{i} beta"))
+            .with_content(2, format!("concurrent_access_{i} gamma"))
+            .with_content(3, format!("reader_test_{i} delta"))
+            .with_content(4, format!("exhaustion_check_{i} epsilon"))
             .build_normalized();
 
         index.add_conversation(&conv).unwrap();
@@ -339,15 +335,13 @@ fn concurrent_reader_handle_exhaustion() {
     // Should have no errors (no reader exhaustion)
     assert_eq!(
         total_errors, 0,
-        "Should have no reader exhaustion errors. Results: {:?}",
-        results
+        "Should have no reader exhaustion errors. Results: {results:?}"
     );
 
     // All searches should succeed
     assert_eq!(
         total_success, total_searches,
-        "All {} searches should succeed, got {}",
-        total_searches, total_success
+        "All {total_searches} searches should succeed, got {total_success}"
     );
 }
 
@@ -364,12 +358,12 @@ fn concurrent_different_filters_no_interference() {
     for agent in &["codex", "claude", "gemini"] {
         for i in 0..5 {
             let conv = util::ConversationFixtureBuilder::new(*agent)
-                .title(format!("{}_{}", agent, i))
-                .source_path(dir.path().join(format!("{}_{}.jsonl", agent, i)))
-                .workspace(format!("/workspace/{}", agent))
-                .base_ts(1000 + i as i64)
+                .title(format!("{agent}_{i}"))
+                .source_path(dir.path().join(format!("{agent}_{i}.jsonl")))
+                .workspace(format!("/workspace/{agent}"))
+                .base_ts(1000 + i64::from(i))
                 .messages(1)
-                .with_content(0, format!("filter_test common_term {} specific", agent))
+                .with_content(0, format!("filter_test common_term {agent} specific"))
                 .build_normalized();
 
             index.add_conversation(&conv).unwrap();
@@ -441,16 +435,12 @@ fn concurrent_different_filters_no_interference() {
         if agent == "all" {
             assert!(
                 *count >= 3,
-                "Unfiltered search should find results from multiple agents (got {})",
-                count
+                "Unfiltered search should find results from multiple agents (got {count})"
             );
         } else {
             assert!(
                 *count > 0,
-                "Filtered search for {} should find results (got {}). All results: {:?}",
-                agent,
-                count,
-                results
+                "Filtered search for {agent} should find results (got {count}). All results: {results:?}"
             );
         }
     }
@@ -504,11 +494,11 @@ fn concurrent_no_deadlock_mixed_operations() {
     // Index more content while searches are running
     for i in 0..30 {
         let conv = util::ConversationFixtureBuilder::new("tester")
-            .title(format!("added_{}", i))
-            .source_path(dir.path().join(format!("added_{}.jsonl", i)))
-            .base_ts(2000 + i as i64)
+            .title(format!("added_{i}"))
+            .source_path(dir.path().join(format!("added_{i}.jsonl")))
+            .base_ts(2000 + i64::from(i))
             .messages(1)
-            .with_content(0, format!("deadlock_content_{}", i))
+            .with_content(0, format!("deadlock_content_{i}"))
             .build_normalized();
 
         index.add_conversation(&conv).unwrap();
@@ -529,9 +519,10 @@ fn concurrent_no_deadlock_mixed_operations() {
 
     for handle in handles {
         let remaining = timeout.saturating_sub(start.elapsed());
-        if remaining.is_zero() {
-            panic!("Deadlock detected: threads did not complete within timeout");
-        }
+        assert!(
+            !remaining.is_zero(),
+            "Deadlock detected: threads did not complete within timeout"
+        );
         // Join with implicit timeout through the atomic flag
         handle.join().expect("Thread should not panic");
     }

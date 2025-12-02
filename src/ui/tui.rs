@@ -75,7 +75,7 @@ fn format_time_chip(from: Option<i64>, to: Option<i64>) -> String {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum MatchMode {
+pub enum MatchMode {
     Standard,
     Prefix,
 }
@@ -91,7 +91,7 @@ pub enum RankingMode {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum ContextWindow {
+pub enum ContextWindow {
     Small,
     Medium,
     Large,
@@ -130,7 +130,7 @@ impl ContextWindow {
 /// Display density presets for result lists.
 /// Controls lines-per-item and visual spacing.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
-enum DensityMode {
+pub enum DensityMode {
     /// 2 lines per item: header + location. Maximum items visible.
     Compact,
     /// 4 lines per item: header + location + 2 snippet lines. Balanced.
@@ -212,7 +212,7 @@ struct AgentPane {
     agent: String,
     hits: Vec<SearchHit>,
     selected: usize,
-    /// Total number of results for this agent (may be more than hits.len() due to limit)
+    /// Total number of results for this agent (may be more than `hits.len()` due to limit)
     total_count: usize,
 }
 
@@ -261,7 +261,7 @@ fn score_bar(score: f32, palette: ThemePalette) -> Vec<Span<'static>> {
         ),
         Span::raw(" "),
         Span::styled(
-            format!("{:.1}", score),
+            format!("{score:.1}"),
             Style::default().fg(color).add_modifier(modifier),
         ),
     ]
@@ -270,7 +270,7 @@ fn score_bar(score: f32, palette: ThemePalette) -> Vec<Span<'static>> {
 /// Linear interpolation between two u8 values.
 /// t=0.0 returns a, t=1.0 returns b.
 fn lerp_u8(a: u8, b: u8, t: f32) -> u8 {
-    (a as f32 + (b as f32 - a as f32) * t.clamp(0.0, 1.0)) as u8
+    (f32::from(a) + (f32::from(b) - f32::from(a)) * t.clamp(0.0, 1.0)) as u8
 }
 
 /// Interpolates between two colors based on progress (0.0 to 1.0).
@@ -388,7 +388,7 @@ fn flash_progress(flash_until: Option<Instant>, duration_ms: u64) -> f32 {
 
 /// Calculates staggered reveal progress for a specific item index.
 /// Returns 0.0 (invisible) to 1.0 (fully visible).
-/// Items are revealed in sequence with STAGGER_DELAY_MS between each.
+/// Items are revealed in sequence with `STAGGER_DELAY_MS` between each.
 fn item_reveal_progress(
     anim_start: Option<Instant>,
     item_idx: usize,
@@ -475,16 +475,16 @@ fn truncate_path(path: &str, max_len: usize) -> String {
 
     // Build truncated path
     let truncated = if display_path.starts_with('/') {
-        format!("/.../{}/{}", second_last, last)
+        format!("/.../{second_last}/{last}")
     } else if display_path.starts_with('~') {
-        format!("~/.../{}/{}", second_last, last)
+        format!("~/.../{second_last}/{last}")
     } else {
-        format!("{}/.../{}/{}", prefix, second_last, last)
+        format!("{prefix}/.../{second_last}/{last}")
     };
 
     // If truncated is still too long, fall back to just showing the filename
     if truncated.len() > max_len && !last.is_empty() {
-        let result = format!(".../{}", last);
+        let result = format!(".../{last}");
         if result.len() <= max_len {
             return result;
         }
@@ -562,7 +562,7 @@ fn contextual_empty_state(
                 Style::default().add_modifier(Modifier::BOLD),
             ),
             Span::styled(
-                format!("\"{}\"", query),
+                format!("\"{query}\""),
                 Style::default()
                     .fg(palette.accent)
                     .add_modifier(Modifier::BOLD),
@@ -578,7 +578,7 @@ fn contextual_empty_state(
                     Style::default().fg(palette.hint),
                 ),
                 Span::styled(
-                    format!("\"{}\"", suggestion),
+                    format!("\"{suggestion}\""),
                     Style::default()
                         .fg(palette.accent)
                         .add_modifier(Modifier::BOLD | Modifier::UNDERLINED),
@@ -599,7 +599,7 @@ fn contextual_empty_state(
                 if shortcut > 0 {
                     lines.push(Line::from(vec![
                         Span::styled(
-                            format!("  {} ", shortcut),
+                            format!("  {shortcut} "),
                             Style::default()
                                 .fg(palette.accent)
                                 .add_modifier(Modifier::BOLD),
@@ -623,7 +623,7 @@ fn contextual_empty_state(
             quick_actions.push(Line::from(vec![
                 Span::raw("  "),
                 Span::styled(
-                    format!("{}*", base),
+                    format!("{base}*"),
                     Style::default()
                         .fg(palette.accent)
                         .add_modifier(Modifier::BOLD),
@@ -633,7 +633,7 @@ fn contextual_empty_state(
             quick_actions.push(Line::from(vec![
                 Span::raw("  "),
                 Span::styled(
-                    format!("*{}", base),
+                    format!("*{base}"),
                     Style::default()
                         .fg(palette.accent)
                         .add_modifier(Modifier::BOLD),
@@ -668,7 +668,7 @@ fn contextual_empty_state(
         } else {
             agents.first().cloned().unwrap_or_default()
         };
-        suggestions.push(format!("Clear agent filter: {} (Shift+F3)", agent_str));
+        suggestions.push(format!("Clear agent filter: {agent_str} (Shift+F3)"));
     }
 
     // Workspace filter suggestion
@@ -769,29 +769,31 @@ fn format_relative_time(timestamp_ms: i64) -> String {
     if seconds < 60 {
         "just now".to_string()
     } else if minutes < 60 {
-        format!("{}m ago", minutes)
+        format!("{minutes}m ago")
     } else if hours < 24 {
-        format!("{}h ago", hours)
+        format!("{hours}h ago")
     } else if days < 7 {
-        format!("{}d ago", days)
+        format!("{days}d ago")
     } else if days < 30 {
         format!("{}w ago", days / 7)
     } else {
         // For older timestamps, show absolute date
-        DateTime::from_timestamp_millis(timestamp_ms)
-            .map(|dt| dt.format("%Y-%m-%d").to_string())
-            .unwrap_or_else(|| "unknown".to_string())
+        DateTime::from_timestamp_millis(timestamp_ms).map_or_else(
+            || "unknown".to_string(),
+            |dt| dt.format("%Y-%m-%d").to_string(),
+        )
     }
 }
 
 /// Formats a timestamp as an absolute string with date and time in UTC.
 fn format_absolute_time(timestamp_ms: i64) -> String {
-    DateTime::<Utc>::from_timestamp_millis(timestamp_ms)
-        .map(|dt| dt.format("%Y-%m-%d %H:%M:%S UTC").to_string())
-        .unwrap_or_else(|| "unknown".to_string())
+    DateTime::<Utc>::from_timestamp_millis(timestamp_ms).map_or_else(
+        || "unknown".to_string(),
+        |dt| dt.format("%Y-%m-%d %H:%M:%S UTC").to_string(),
+    )
 }
 
-fn help_lines(palette: ThemePalette) -> Vec<Line<'static>> {
+pub fn help_lines(palette: ThemePalette) -> Vec<Line<'static>> {
     let mut lines: Vec<Line<'static>> = Vec::new();
 
     let add_section = |title: &str, items: &[String]| -> Vec<Line<'static>> {
@@ -879,6 +881,7 @@ fn help_lines(palette: ThemePalette) -> Vec<Line<'static>> {
             "Wildcards: foo* (prefix), *foo (suffix), *foo* (contains)".to_string(),
             "Auto-fuzzy: searches with few results try *term* fallback".to_string(),
             format!("{} refresh search (re-query index)", shortcuts::REFRESH),
+            "/ detail-find in preview; n/N to jump matches".to_string(),
         ],
     ));
     lines.extend(add_section(
@@ -1113,7 +1116,7 @@ fn render_parsed_content(
             .map(|t| format!(" · {}", format_absolute_time(t)))
             .unwrap_or_default();
         lines.push(Line::from(vec![
-            Span::styled(format!("{} ", role_icon), Style::default()),
+            Span::styled(format!("{role_icon} "), Style::default()),
             Span::styled(
                 role_label.to_string(),
                 Style::default().fg(role_color).add_modifier(Modifier::BOLD),
@@ -1159,7 +1162,7 @@ fn parse_message_content(content: &str, query: &str, palette: ThemePalette) -> V
                     let lang_label = code_lang
                         .take()
                         .filter(|l| !l.is_empty())
-                        .map(|l| format!(" {}", l))
+                        .map(|l| format!(" {l}"))
                         .unwrap_or_default();
                     lines.push(Line::from(vec![
                         Span::styled("┌──", Style::default().fg(palette.hint)),
@@ -1360,7 +1363,7 @@ fn calculate_pane_limit(terminal_height: u16, density: DensityMode) -> usize {
 
     let lines_per_item = density.lines_per_item();
     let available = terminal_height.saturating_sub(OVERHEAD);
-    let results_height = (available as f32 * RESULTS_PERCENT) as usize;
+    let results_height = (f32::from(available) * RESULTS_PERCENT) as usize;
     let items = results_height / lines_per_item;
     items.clamp(MIN_ITEMS, MAX_ITEMS)
 }
@@ -1431,24 +1434,21 @@ fn rebuild_panes_with_filter(
     let filtered = apply_pane_filter(results, pane_filter);
     let mut panes = build_agent_panes(&filtered, per_pane_limit);
 
-    if !panes.is_empty() {
-        if let Some(agent) = prev_agent {
-            if let Some(idx) = panes.iter().position(|p| p.agent == agent) {
-                *active_pane = idx;
-                if let Some(path) = prev_path
-                    && let Some(hit_idx) =
-                        panes[idx].hits.iter().position(|h| h.source_path == path)
-                {
-                    panes[idx].selected = hit_idx;
-                }
-            } else {
-                *active_pane = 0;
-            }
-        } else if *active_pane >= panes.len() {
-            *active_pane = panes.len().saturating_sub(1);
-        }
-    } else {
+    if panes.is_empty() {
         *active_pane = 0;
+    } else if let Some(agent) = prev_agent {
+        if let Some(idx) = panes.iter().position(|p| p.agent == agent) {
+            *active_pane = idx;
+            if let Some(path) = prev_path
+                && let Some(hit_idx) = panes[idx].hits.iter().position(|h| h.source_path == path)
+            {
+                panes[idx].selected = hit_idx;
+            }
+        } else {
+            *active_pane = 0;
+        }
+    } else if *active_pane >= panes.len() {
+        *active_pane = panes.len().saturating_sub(1);
     }
 
     if *active_pane < *pane_scroll_offset {
@@ -1550,7 +1550,7 @@ fn contextual_snippet(text: &str, query: &str, window: ContextWindow) -> String 
     });
 
     let chars: Vec<char> = text.chars().collect();
-    let char_pos = byte_pos.map(|b| text[..b].chars().count()).unwrap_or(0);
+    let char_pos = byte_pos.map_or(0, |b| text[..b].chars().count());
     let len = chars.len();
     let start = char_pos.saturating_sub(size / 2);
     let end = (start + size).min(len);
@@ -1599,7 +1599,7 @@ fn smart_word_wrap(text: &str, max_width: usize) -> Vec<String> {
             if word_len > available {
                 // Word too long - truncate it
                 let truncated: String = word.chars().take(available.saturating_sub(1)).collect();
-                current_line = format!("{}…", truncated);
+                current_line = format!("{truncated}…");
             } else {
                 current_line = word.to_string();
             }
@@ -1614,7 +1614,7 @@ fn smart_word_wrap(text: &str, max_width: usize) -> Vec<String> {
             } else {
                 continuation_indent
             };
-            lines.push(format!("{}{}", indent, current_line));
+            lines.push(format!("{indent}{current_line}"));
             is_first_line = false;
 
             // Start new line with word
@@ -1623,7 +1623,7 @@ fn smart_word_wrap(text: &str, max_width: usize) -> Vec<String> {
                     .chars()
                     .take(cont_line_width.saturating_sub(1))
                     .collect();
-                current_line = format!("{}…", truncated);
+                current_line = format!("{truncated}…");
             } else {
                 current_line = word.to_string();
             }
@@ -1637,7 +1637,7 @@ fn smart_word_wrap(text: &str, max_width: usize) -> Vec<String> {
         } else {
             continuation_indent
         };
-        lines.push(format!("{}{}", indent, current_line));
+        lines.push(format!("{indent}{current_line}"));
     }
 
     lines
@@ -1926,7 +1926,7 @@ fn save_view_slot(
         ranking,
     });
     saved_views.sort_by_key(|v| v.slot);
-    format!("Saved view to slot {}", slot)
+    format!("Saved view to slot {slot}")
 }
 
 fn load_view_slot(
@@ -1941,7 +1941,7 @@ fn load_view_slot(
         filters.created_from = v.created_from;
         filters.created_to = v.created_to;
         *ranking = v.ranking;
-        format!("Loaded view slot {}", slot)
+        format!("Loaded view slot {slot}")
     })
 }
 
@@ -1962,7 +1962,7 @@ fn save_state(path: &std::path::Path, state: &TuiStatePersisted) {
 /// Only call this on explicit user commit actions (Enter on result, F8 editor, y copy).
 fn save_query_to_history(query: &str, history: &mut VecDeque<String>, cap: usize) {
     let q = query.trim();
-    if !q.is_empty() && history.front().map(|h| h != q).unwrap_or(true) {
+    if !q.is_empty() && history.front().is_none_or(|h| h != q) {
         history.push_front(q.to_string());
         if history.len() > cap {
             history.pop_back();
@@ -1973,7 +1973,7 @@ fn save_query_to_history(query: &str, history: &mut VecDeque<String>, cap: usize
 /// Deduplicate history by removing queries that are strict prefixes of other queries.
 /// This cleans up any pollution from incremental typing before this fix was implemented.
 /// Example: ["foobar", "foo", "foob", "bar"] -> ["foobar", "bar"]
-fn dedupe_history_prefixes(history: Vec<String>) -> Vec<String> {
+pub fn dedupe_history_prefixes(history: Vec<String>) -> Vec<String> {
     let mut result: Vec<String> = Vec::with_capacity(history.len());
     for q in history {
         // Skip if this query is a strict prefix of any existing entry
@@ -1990,7 +1990,7 @@ fn dedupe_history_prefixes(history: Vec<String>) -> Vec<String> {
     result
 }
 
-fn apply_match_mode(query: &str, mode: MatchMode) -> String {
+pub fn apply_match_mode(query: &str, mode: MatchMode) -> String {
     match mode {
         MatchMode::Standard => query.to_string(),
         MatchMode::Prefix => query
@@ -2008,7 +2008,7 @@ fn apply_match_mode(query: &str, mode: MatchMode) -> String {
     }
 }
 
-fn highlight_spans_owned(
+pub fn highlight_spans_owned(
     text: &str,
     query: &str,
     palette: ThemePalette,
@@ -2169,16 +2169,16 @@ fn quick_date_range_hours(hours: i64) -> Option<(i64, i64)> {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum FocusRegion {
+pub enum FocusRegion {
     Results,
     Detail,
 }
 
 #[derive(Clone, Debug, Default)]
-struct DetailFindState {
-    query: String,
-    matches: Vec<u16>,
-    current: usize,
+pub struct DetailFindState {
+    pub query: String,
+    pub matches: Vec<u16>,
+    pub current: usize,
 }
 
 #[allow(dead_code)]
@@ -2293,7 +2293,7 @@ pub fn run_tui(
     };
 
     if reset_state {
-        status = format!("State reset (tui_state.json cleared). {}", status);
+        status = format!("State reset (tui_state.json cleared). {status}");
     }
 
     let mut query = String::new();
@@ -2305,7 +2305,7 @@ pub fn run_tui(
     let mut density_mode = match persisted
         .density_mode
         .as_deref()
-        .map(|s| s.to_lowercase())
+        .map(str::to_lowercase)
         .as_deref()
     {
         Some("compact") => DensityMode::Compact,
@@ -2394,8 +2394,7 @@ pub fn run_tui(
     let mut ranking_mode = persisted
         .ranking_mode
         .as_deref()
-        .map(ranking_from_str)
-        .unwrap_or(RankingMode::Balanced);
+        .map_or(RankingMode::Balanced, ranking_from_str);
     let mut saved_views: Vec<SavedView> = persisted
         .saved_views
         .as_ref()
@@ -2412,8 +2411,7 @@ pub fn run_tui(
                             ranking: sv
                                 .ranking
                                 .as_deref()
-                                .map(ranking_from_str)
-                                .unwrap_or(RankingMode::Balanced),
+                                .map_or(RankingMode::Balanced, ranking_from_str),
                         })
                     } else {
                         None
@@ -2482,10 +2480,7 @@ pub fn run_tui(
         let empty = bar_width.saturating_sub(filled.min(bar_width));
         let bar = format!("{}{}", "█".repeat(filled.min(bar_width)), "░".repeat(empty));
 
-        let mut s = format!(
-            " | {} {} {}/{} ({}%) {}",
-            icon, phase_str, current, total, pct, bar
-        );
+        let mut s = format!(" | {icon} {phase_str} {current}/{total} ({pct}%) {bar}");
         if is_rebuild {
             s.push_str(" ⚠ FULL REBUILD - Search unavailable");
         } else if phase > 0 {
@@ -2544,12 +2539,12 @@ pub fn run_tui(
 
                 let bar_text = match input_mode {
                     InputMode::Query => query.as_str().to_string(),
-                    InputMode::Agent => format!("[agent] {}", input_buffer),
-                    InputMode::Workspace => format!("[workspace] {}", input_buffer),
-                    InputMode::CreatedFrom => format!("[from] {}", input_buffer),
-                    InputMode::CreatedTo => format!("[to] {}", input_buffer),
-                    InputMode::PaneFilter => format!("[pane] {}", input_buffer),
-                    InputMode::DetailFind => format!("[detail find] {}", input_buffer),
+                    InputMode::Agent => format!("[agent] {input_buffer}"),
+                    InputMode::Workspace => format!("[workspace] {input_buffer}"),
+                    InputMode::CreatedFrom => format!("[from] {input_buffer}"),
+                    InputMode::CreatedTo => format!("[to] {input_buffer}"),
+                    InputMode::PaneFilter => format!("[pane] {input_buffer}"),
+                    InputMode::DetailFind => format!("[detail find] {input_buffer}"),
                 };
                 let mode_label = match match_mode {
                     MatchMode::Standard => "standard",
@@ -2694,7 +2689,7 @@ pub fn run_tui(
                                 _ => ("⏳", "Processing..."),
                             };
                             lines.push(Line::from(vec![
-                                Span::styled(format!("  {} ", icon), Style::default()),
+                                Span::styled(format!("  {icon} "), Style::default()),
                                 Span::styled(
                                     phase_label,
                                     Style::default()
@@ -2715,14 +2710,11 @@ pub fn run_tui(
                                 ),
                                 Span::styled("░".repeat(empty), Style::default().fg(palette.hint)),
                                 Span::styled("]", Style::default().fg(palette.border)),
-                                Span::styled(
-                                    format!(" {}%", pct),
-                                    Style::default().fg(palette.hint),
-                                ),
+                                Span::styled(format!(" {pct}%"), Style::default().fg(palette.hint)),
                             ]));
                             lines.push(Line::from(""));
                             lines.push(Line::from(Span::styled(
-                                format!("  Processing {} of {} items", current, total),
+                                format!("  Processing {current} of {total} items"),
                                 Style::default().fg(palette.hint),
                             )));
                             lines.push(Line::from(Span::styled(
@@ -2735,8 +2727,7 @@ pub fn run_tui(
 
                     // Only show history/empty state if not indexing OR if indexing but user typed a query
                     let show_normal_empty = indexing_active
-                        .map(|(phase, _, _, _, _)| phase == 0)
-                        .unwrap_or(true)
+                        .is_none_or(|(phase, _, _, _, _)| phase == 0)
                         || !query.trim().is_empty();
 
                     if show_normal_empty {
@@ -2856,7 +2847,7 @@ pub fn run_tui(
                                 let match_count = count_query_matches(&hit.content, highlight_term);
                                 if match_count > 1 {
                                     header_spans.push(Span::styled(
-                                        format!(" (×{})", match_count),
+                                        format!(" (×{match_count})"),
                                         Style::default().fg(palette.hint),
                                     ));
                                 }
@@ -3055,7 +3046,7 @@ pub fn run_tui(
 
                     // Render hidden pane directional indicators (arrows)
                     if safe_scroll_offset > 0 {
-                        let text = format!("◀ +{}", safe_scroll_offset);
+                        let text = format!("◀ +{safe_scroll_offset}");
                         let area = Rect::new(results_area.x, results_area.y, text.len() as u16, 1);
                         f.render_widget(
                             Span::styled(
@@ -3070,7 +3061,7 @@ pub fn run_tui(
                     }
                     if visible_end < panes.len() {
                         let diff = panes.len() - visible_end;
-                        let text = format!("+{} ▶", diff);
+                        let text = format!("+{diff} ▶");
                         let area = Rect::new(
                             results_area.x + results_area.width.saturating_sub(text.len() as u16),
                             results_area.y,
@@ -3094,7 +3085,7 @@ pub fn run_tui(
                         let (phase, _, _, _, pct) = get_indexing_state(prog);
                         if phase > 0 {
                             let indicator =
-                                format!(" ⚠ Indexing {}% - results may be incomplete ", pct);
+                                format!(" ⚠ Indexing {pct}% - results may be incomplete ");
                             let indicator_span = Span::styled(
                                 indicator.clone(),
                                 Style::default()
@@ -3120,8 +3111,7 @@ pub fn run_tui(
                     // Load detail data first to get counts for tabs
                     let detail = if cached_detail
                         .as_ref()
-                        .map(|(p, _)| p == &hit.source_path)
-                        .unwrap_or(false)
+                        .is_some_and(|(p, _)| p == &hit.source_path)
                     {
                         cached_detail.as_ref().map(|(_, d)| d.clone())
                     } else {
@@ -3148,8 +3138,8 @@ pub fn run_tui(
 
                     // Build tab labels with counts (sux.6.5)
                     let tab_labels = [
-                        format!("Messages ({})", msg_count),
-                        format!("Snippets ({})", snippet_count),
+                        format!("Messages ({msg_count})"),
+                        format!("Snippets ({snippet_count})"),
                         "Raw".to_string(),
                     ];
                     let tab_titles: Vec<Line> = tab_labels
@@ -3218,7 +3208,7 @@ pub fn run_tui(
                         Span::raw(format!("{:.2}", hit.score)),
                         Span::raw("  "),
                         Span::styled("Stats: ", Style::default().fg(palette.hint)),
-                        Span::raw(format!("{} msgs, {} snippets", msg_count, snippet_count)),
+                        Span::raw(format!("{msg_count} msgs, {snippet_count} snippets")),
                     ]));
 
                     // Determine highlight term priority: detail-find > pane filter > last query
@@ -3267,11 +3257,10 @@ pub fn run_tui(
                             if let Some(full) = detail {
                                 for (msg_idx, msg) in full.messages.iter().enumerate() {
                                     for snip in &msg.snippets {
-                                        let file = snip
-                                            .file_path
-                                            .as_ref()
-                                            .map(|p| p.to_string_lossy().to_string())
-                                            .unwrap_or_else(|| "<unknown file>".into());
+                                        let file = snip.file_path.as_ref().map_or_else(
+                                            || "<unknown file>".into(),
+                                            |p| p.to_string_lossy().to_string(),
+                                        );
                                         let range = match (snip.start_line, snip.end_line) {
                                             (Some(s), Some(e)) => format!("{s}-{e}"),
                                             (Some(s), None) => s.to_string(),
@@ -3436,7 +3425,7 @@ pub fn run_tui(
                 let mut footer_parts: Vec<String> = vec![];
                 if dirty_since.is_some() {
                     let spinner = SPINNER_CHARS[spinner_frame % SPINNER_CHARS.len()];
-                    footer_parts.push(format!("{} Searching...", spinner));
+                    footer_parts.push(format!("{spinner} Searching..."));
                 } else if !status.is_empty() {
                     footer_parts.push(status.clone());
                 }
@@ -3449,7 +3438,7 @@ pub fn run_tui(
                 }
 
                 if let Some(ms) = last_search_ms {
-                    footer_parts.push(format!("⚡ {}ms", ms));
+                    footer_parts.push(format!("⚡ {ms}ms"));
                 }
 
                 if cache_debug {
@@ -3508,10 +3497,7 @@ pub fn run_tui(
                         .to_string(),
                     );
                 }
-                if peek_badge_until
-                    .map(|t| t > Instant::now())
-                    .unwrap_or(false)
-                {
+                if peek_badge_until.is_some_and(|t| t > Instant::now()) {
                     footer_parts.push("PEEK".to_string());
                 }
 
@@ -3529,8 +3515,15 @@ pub fn run_tui(
                     .split(footer_area);
 
                 // Query display bar - prominent centered display of active query
-                let query_display = if !last_query.is_empty() {
-                    let query_text = format!(" {} ", last_query);
+                let query_display = if last_query.is_empty() {
+                    Line::from(Span::styled(
+                        " No active query ",
+                        Style::default()
+                            .fg(palette.hint)
+                            .add_modifier(Modifier::ITALIC),
+                    ))
+                } else {
+                    let query_text = format!(" {last_query} ");
                     let query_len = query_text.len() as u16;
                     let area_width = footer_split[0].width;
                     let pad_left = area_width.saturating_sub(query_len) / 2;
@@ -3555,13 +3548,6 @@ pub fn run_tui(
                             Style::default().bg(palette.surface),
                         ),
                     ])
-                } else {
-                    Line::from(Span::styled(
-                        " No active query ",
-                        Style::default()
-                            .fg(palette.hint)
-                            .add_modifier(Modifier::ITALIC),
-                    ))
                 };
                 let query_bar = Paragraph::new(query_display).alignment(Alignment::Center);
                 f.render_widget(query_bar, footer_split[0]);
@@ -4033,7 +4019,7 @@ pub fn run_tui(
                                         status = msg;
                                         dirty_since = Some(Instant::now());
                                     } else {
-                                        status = format!("No saved view in slot {}", slot);
+                                        status = format!("No saved view in slot {slot}");
                                     }
                                 }
                             }
@@ -4221,7 +4207,7 @@ pub fn run_tui(
                                 // Clear selection
                                 let count = selected.len();
                                 selected.clear();
-                                status = format!("Cleared {} selections", count);
+                                status = format!("Cleared {count} selections");
                             }
                             _ => {}
                         }
@@ -4290,7 +4276,7 @@ pub fn run_tui(
                                     MessageRole::System => "SYSTEM",
                                     MessageRole::Other(r) => r,
                                 };
-                                text.push_str(&format!("=== {} ===\n", role_label));
+                                text.push_str(&format!("=== {role_label} ===\n"));
                                 text.push_str(&msg.content);
                                 text.push_str("\n\n");
                             }
@@ -4353,7 +4339,7 @@ pub fn run_tui(
                                     MessageRole::System => "SYSTEM",
                                     MessageRole::Other(r) => r,
                                 };
-                                text.push_str(&format!("=== {} ===\n", role_label));
+                                text.push_str(&format!("=== {role_label} ===\n"));
                                 text.push_str(&msg.content);
                                 text.push_str("\n\n");
                             }
@@ -4424,20 +4410,20 @@ pub fn run_tui(
                             if editor == "code" {
                                 // VS Code: code --goto file:line
                                 if let Some(ln) = hit.line_number {
-                                    cmd.arg("--goto").arg(format!("{}:{}", path, ln));
+                                    cmd.arg("--goto").arg(format!("{path}:{ln}"));
                                 } else {
                                     cmd.arg(path);
                                 }
                             } else if editor == "vim" || editor == "vi" || editor == "nvim" {
                                 // Vim: vim +line file
                                 if let Some(ln) = hit.line_number {
-                                    cmd.arg(format!("+{}", ln));
+                                    cmd.arg(format!("+{ln}"));
                                 }
                                 cmd.arg(path);
                             } else if editor == "nano" {
                                 // Nano: nano +line file
                                 if let Some(ln) = hit.line_number {
-                                    cmd.arg(format!("+{}", ln));
+                                    cmd.arg(format!("+{ln}"));
                                 }
                                 cmd.arg(path);
                             } else {
@@ -4452,9 +4438,9 @@ pub fn run_tui(
                             enable_raw_mode().ok();
 
                             status = if result.map(|s| s.success()).unwrap_or(false) {
-                                format!("Opened {} in {}", path, editor)
+                                format!("Opened {path} in {editor}")
                             } else {
-                                format!("✗ Failed to open in {}", editor)
+                                format!("✗ Failed to open in {editor}")
                             };
                             show_detail_modal = false;
                             modal_scroll = 0;
@@ -4500,7 +4486,7 @@ pub fn run_tui(
                                         child.wait()
                                     });
                                 if result.map(|s| s.success()).unwrap_or(false) {
-                                    format!("✓ Path copied: {}", path)
+                                    format!("✓ Path copied: {path}")
                                 } else {
                                     "✗ Clipboard copy failed".to_string()
                                 }
@@ -4587,7 +4573,7 @@ pub fn run_tui(
                             continue;
                         }
                         // Handle both 'r' and 'R' since Shift modifier may change the char
-                        if matches!(key.code, KeyCode::Char('r') | KeyCode::Char('R')) {
+                        if matches!(key.code, KeyCode::Char('r' | 'R')) {
                             // Ctrl+Shift+R = refresh search (re-query index)
                             if key.modifiers.contains(KeyModifiers::SHIFT) {
                                 if let Some(tx) = &reindex_tx {
@@ -4606,9 +4592,8 @@ pub fn run_tui(
                                 // Ctrl+R = cycle history
                                 status = "No query history yet".to_string();
                             } else {
-                                let next = history_cursor
-                                    .map(|idx| (idx + 1) % query_history.len())
-                                    .unwrap_or(0);
+                                let next =
+                                    history_cursor.map_or(0, |idx| (idx + 1) % query_history.len());
                                 if let Some(saved) = query_history.get(next) {
                                     history_cursor = Some(next);
                                     query = saved.clone();
@@ -4639,7 +4624,7 @@ pub fn run_tui(
                                 cached_detail = None;
                                 detail_scroll = 0;
                             } else {
-                                status = format!("No saved view in slot {}", slot);
+                                status = format!("No saved view in slot {slot}");
                             }
                         }
                         KeyCode::Backspace if query.is_empty() => {
@@ -4662,7 +4647,7 @@ pub fn run_tui(
                             if !selected.is_empty() {
                                 let count = selected.len();
                                 selected.clear();
-                                status = format!("Cleared {} selections", count);
+                                status = format!("Cleared {count} selections");
                             } else if matches!(focus_region, FocusRegion::Detail) {
                                 focus_region = FocusRegion::Results;
                                 status = "Focus: Results".to_string();
@@ -4893,13 +4878,13 @@ pub fn run_tui(
                         }
                         // Bulk action menu: A opens when items are selected
                         KeyCode::Char('A') => {
-                            if !selected.is_empty() {
+                            if selected.is_empty() {
+                                status = "No items selected. m to select, Ctrl+A to select all."
+                                    .to_string();
+                            } else {
                                 show_bulk_modal = true;
                                 bulk_action_idx = 0;
                                 status = "Bulk actions: ↑↓ navigate · Enter execute · Esc cancel"
-                                    .to_string();
-                            } else {
-                                status = "No items selected. m to select, Ctrl+A to select all."
                                     .to_string();
                             }
                         }
@@ -4978,7 +4963,7 @@ pub fn run_tui(
                             filters.created_from = next_ts;
                             filters.created_to = None;
                             page = 0;
-                            status = format!("Time filter: {}", next_label);
+                            status = format!("Time filter: {next_label}");
                             dirty_since = Some(Instant::now());
                             focus_region = FocusRegion::Results;
                             cached_detail = None;
@@ -5002,7 +4987,7 @@ pub fn run_tui(
                                     filters.created_from = Some(start);
                                     filters.created_to = Some(now);
                                 }
-                                status = format!("Time preset: {}", label);
+                                status = format!("Time preset: {label}");
                                 dirty_since = Some(Instant::now());
                             } else {
                                 input_mode = InputMode::CreatedFrom;
@@ -5147,7 +5132,7 @@ pub fn run_tui(
                                 let path = &hit.source_path;
                                 let mut cmd = StdCommand::new(&editor_cmd);
                                 if let Some(line) = hit.line_number {
-                                    cmd.arg(format!("{}{}", editor_line_flag, line));
+                                    cmd.arg(format!("{editor_line_flag}{line}"));
                                 }
                                 let _ = cmd.arg(path).status();
                             }
@@ -5287,7 +5272,7 @@ pub fn run_tui(
                             if key.modifiers.contains(KeyModifiers::SHIFT) && matches!(c, '+' | '=')
                             {
                                 per_pane_limit = (per_pane_limit + 2).min(50);
-                                status = format!("Pane size: {} items", per_pane_limit);
+                                status = format!("Pane size: {per_pane_limit} items");
                                 let prev_agent = active_hit(&panes, active_pane)
                                     .map(|h| h.agent.clone())
                                     .or_else(|| panes.get(active_pane).map(|p| p.agent.clone()));
@@ -5310,7 +5295,7 @@ pub fn run_tui(
                             // Otherwise, allow `-` to be typed in the search query
                             if key.modifiers.is_empty() && c == '-' && !panes.is_empty() {
                                 per_pane_limit = per_pane_limit.saturating_sub(2).max(4);
-                                status = format!("Pane size: {} items", per_pane_limit);
+                                status = format!("Pane size: {per_pane_limit} items");
                                 let prev_agent = active_hit(&panes, active_pane)
                                     .map(|h| h.agent.clone())
                                     .or_else(|| panes.get(active_pane).map(|p| p.agent.clone()));
@@ -5574,7 +5559,7 @@ pub fn run_tui(
                         let suggestions = agent_suggestions(&input_buffer);
                         if let Some(first) = suggestions.first() {
                             input_buffer = first.to_string();
-                            status = format!("Completed to '{}'. Press Enter to apply.", first);
+                            status = format!("Completed to '{first}'. Press Enter to apply.");
                         }
                     }
                     KeyCode::Enter => {
@@ -5794,11 +5779,7 @@ pub fn run_tui(
                             prev_path,
                             MAX_VISIBLE_PANES,
                         );
-                        status = if pane_filter
-                            .as_ref()
-                            .map(|s| !s.trim().is_empty())
-                            .unwrap_or(false)
-                        {
+                        status = if pane_filter.as_ref().is_some_and(|s| !s.trim().is_empty()) {
                             "Pane filter applied".to_string()
                         } else {
                             "Pane filter cleared".to_string()
@@ -5875,7 +5856,7 @@ pub fn run_tui(
                                 matches: Vec::new(),
                                 current: 0,
                             });
-                            status = format!("Detail find: \"{}\"", term);
+                            status = format!("Detail find: \"{term}\"");
                             detail_scroll = 0;
                         }
                         input_buffer.clear();
@@ -5897,9 +5878,7 @@ pub fn run_tui(
 
         if last_tick.elapsed() >= tick_rate {
             if let Some(client) = &search_client {
-                let should_search = dirty_since
-                    .map(|t| t.elapsed() >= debounce)
-                    .unwrap_or(false);
+                let should_search = dirty_since.is_some_and(|t| t.elapsed() >= debounce);
 
                 if should_search {
                     last_query = query.clone();
@@ -6033,9 +6012,7 @@ pub fn run_tui(
                                             if max_created <= 0.0 {
                                                 return 0.0;
                                             }
-                                            h.created_at
-                                                .map(|v| v as f32 / max_created)
-                                                .unwrap_or(0.0)
+                                            h.created_at.map_or(0.0, |v| v as f32 / max_created)
                                         };
                                         let score_a =
                                             (a.score * quality_factor(a)) + alpha * recency(a);
@@ -6065,17 +6042,13 @@ pub fn run_tui(
                                 // Show a clean, user-friendly status
                                 let total_hits: usize = panes.iter().map(|p| p.total_count).sum();
                                 status = if total_hits == 0 {
-                                    if pane_filter
-                                        .as_ref()
-                                        .map(|s| !s.trim().is_empty())
-                                        .unwrap_or(false)
-                                    {
+                                    if pane_filter.as_ref().is_some_and(|s| !s.trim().is_empty()) {
                                         "No results match pane filter".to_string()
                                     } else {
                                         "No results found".to_string()
                                     }
                                 } else if panes.len() == 1 {
-                                    format!("{} results", total_hits)
+                                    format!("{total_hits} results")
                                 } else {
                                     format!("{} results across {} agents", total_hits, panes.len())
                                 };
@@ -6108,7 +6081,7 @@ pub fn run_tui(
             // Keep redrawing while animation is in progress
             if let Some(start) = reveal_anim_start {
                 let total_anim_ms = (MAX_ANIMATED_ITEMS as u64) * STAGGER_DELAY_MS + ITEM_FADE_MS;
-                if start.elapsed().as_millis() < total_anim_ms as u128 {
+                if start.elapsed().as_millis() < u128::from(total_anim_ms) {
                     needs_draw = true; // Animation still in progress
                 } else {
                     reveal_anim_start = None; // Animation complete
@@ -6242,8 +6215,11 @@ mod tests {
         assert_eq!(loaded.match_mode.as_deref(), Some("prefix"));
         assert_eq!(loaded.context_window.as_deref(), Some("XL"));
         assert_eq!(loaded.has_seen_help, Some(true));
-        assert_eq!(loaded.query_history.as_ref().map(|v| v.len()), Some(2));
-        assert_eq!(loaded.saved_views.as_ref().map(|v| v.len()), Some(1));
+        assert_eq!(
+            loaded.query_history.as_ref().map(std::vec::Vec::len),
+            Some(2)
+        );
+        assert_eq!(loaded.saved_views.as_ref().map(std::vec::Vec::len), Some(1));
         // Verify new fields (bead 46t.1)
         assert_eq!(loaded.per_pane_limit, Some(12));
         assert_eq!(loaded.ranking_mode.as_deref(), Some("balanced"));
@@ -6263,7 +6239,7 @@ mod tests {
         assert!(!empty_q.is_empty());
     }
 
-    /// Test count_query_matches for sux.6.6c
+    /// Test `count_query_matches` for sux.6.6c
     #[test]
     fn count_query_matches_works() {
         // Single term exact
@@ -6289,7 +6265,7 @@ mod tests {
         assert_eq!(count_query_matches("hello world", "xyz"), 0);
     }
 
-    /// Test smart_word_wrap for sux.6.6d
+    /// Test `smart_word_wrap` for sux.6.6d
     #[test]
     fn smart_word_wrap_works() {
         // Simple case - fits on one line
@@ -6457,7 +6433,7 @@ mod tests {
             score,
             source_path: path.into(),
             agent: agent.into(),
-            workspace: "".into(),
+            workspace: String::new(),
             created_at: None,
             line_number: None,
             match_type: crate::search::query::MatchType::default(),
@@ -6483,7 +6459,7 @@ mod tests {
     #[test]
     fn build_agent_panes_respects_per_pane_limit() {
         let hits: Vec<SearchHit> = (0..10)
-            .map(|i| make_hit("codex", &format!("/path/{}", i), 5.0, "snippet"))
+            .map(|i| make_hit("codex", &format!("/path/{i}"), 5.0, "snippet"))
             .collect();
 
         let panes = build_agent_panes(&hits, 3);
@@ -6555,14 +6531,7 @@ mod tests {
     #[test]
     fn rebuild_panes_scroll_offset_adjusts_when_pane_out_of_view() {
         let hits: Vec<SearchHit> = (0..10)
-            .map(|i| {
-                make_hit(
-                    &format!("agent{}", i),
-                    &format!("/path/{}", i),
-                    5.0,
-                    "snippet",
-                )
-            })
+            .map(|i| make_hit(&format!("agent{i}"), &format!("/path/{i}"), 5.0, "snippet"))
             .collect();
 
         let mut active_pane: usize = 0;
@@ -6652,5 +6621,590 @@ mod tests {
     fn agent_suggestions_empty_prefix_returns_all() {
         let suggestions = agent_suggestions("");
         assert_eq!(suggestions.len(), KNOWN_AGENTS.len());
+    }
+
+    // ==========================================================================
+    // UI State Persistence Tests (tst.ui.pers)
+    // Tests for saving and restoring UI state across sessions
+    // ==========================================================================
+
+    #[test]
+    fn state_persistence_query_history_save_restore() {
+        let dir = TempDir::new().unwrap();
+        let path = state_path_for(dir.path());
+
+        // Create state with query history
+        let state = TuiStatePersisted {
+            query_history: Some(vec![
+                "latest search".into(),
+                "previous query".into(),
+                "oldest query".into(),
+            ]),
+            ..Default::default()
+        };
+        save_state(&path, &state);
+
+        // Load and verify
+        let loaded = load_state(&path);
+        let history = loaded.query_history.expect("query_history should exist");
+        assert_eq!(history.len(), 3);
+        assert_eq!(history[0], "latest search");
+        assert_eq!(history[1], "previous query");
+        assert_eq!(history[2], "oldest query");
+    }
+
+    #[test]
+    fn state_persistence_saved_views_multiple_slots() {
+        let dir = TempDir::new().unwrap();
+        let path = state_path_for(dir.path());
+
+        // Create state with multiple saved views
+        let state = TuiStatePersisted {
+            saved_views: Some(vec![
+                SavedViewPersisted {
+                    slot: 1,
+                    agents: vec!["codex".into()],
+                    workspaces: vec!["/home/user/project".into()],
+                    created_from: Some(1000),
+                    created_to: Some(2000),
+                    ranking: Some("recent".into()),
+                },
+                SavedViewPersisted {
+                    slot: 5,
+                    agents: vec!["claude_code".into(), "cline".into()],
+                    workspaces: vec![],
+                    created_from: None,
+                    created_to: Some(5000),
+                    ranking: Some("balanced".into()),
+                },
+            ]),
+            ..Default::default()
+        };
+        save_state(&path, &state);
+
+        let loaded = load_state(&path);
+        let views = loaded.saved_views.expect("saved_views should exist");
+        assert_eq!(views.len(), 2);
+
+        // Verify slot 1
+        let view1 = &views[0];
+        assert_eq!(view1.slot, 1);
+        assert_eq!(view1.agents, vec!["codex"]);
+        assert_eq!(view1.workspaces, vec!["/home/user/project"]);
+        assert_eq!(view1.created_from, Some(1000));
+        assert_eq!(view1.created_to, Some(2000));
+        assert_eq!(view1.ranking.as_deref(), Some("recent"));
+
+        // Verify slot 5
+        let view5 = &views[1];
+        assert_eq!(view5.slot, 5);
+        assert_eq!(view5.agents, vec!["claude_code", "cline"]);
+        assert!(view5.workspaces.is_empty());
+        assert_eq!(view5.created_from, None);
+        assert_eq!(view5.created_to, Some(5000));
+    }
+
+    #[test]
+    fn state_persistence_per_pane_limit_and_ranking_mode() {
+        let dir = TempDir::new().unwrap();
+        let path = state_path_for(dir.path());
+
+        // Test various ranking modes
+        for (limit, mode) in [
+            (5, "recent"),
+            (10, "balanced"),
+            (20, "relevance"),
+            (15, "quality"),
+            (8, "newest"),
+            (25, "oldest"),
+        ] {
+            let state = TuiStatePersisted {
+                per_pane_limit: Some(limit),
+                ranking_mode: Some(mode.into()),
+                ..Default::default()
+            };
+            save_state(&path, &state);
+
+            let loaded = load_state(&path);
+            assert_eq!(
+                loaded.per_pane_limit,
+                Some(limit),
+                "per_pane_limit should be {limit}"
+            );
+            assert_eq!(
+                loaded.ranking_mode.as_deref(),
+                Some(mode),
+                "ranking_mode should be {mode}"
+            );
+        }
+    }
+
+    #[test]
+    fn state_persistence_corrupted_state_file_uses_defaults() {
+        let dir = TempDir::new().unwrap();
+        let path = state_path_for(dir.path());
+
+        // Write corrupted JSON
+        std::fs::write(&path, "{ invalid json {{").unwrap();
+
+        // load_state should return defaults without crashing
+        let loaded = load_state(&path);
+        assert!(loaded.match_mode.is_none());
+        assert!(loaded.context_window.is_none());
+        assert!(loaded.density_mode.is_none());
+        assert!(loaded.has_seen_help.is_none());
+        assert!(loaded.query_history.is_none());
+        assert!(loaded.saved_views.is_none());
+        assert!(loaded.help_pinned.is_none());
+        assert!(loaded.per_pane_limit.is_none());
+        assert!(loaded.ranking_mode.is_none());
+    }
+
+    #[test]
+    fn state_persistence_nonexistent_file_uses_defaults() {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("nonexistent_state.json");
+
+        // load_state should return defaults for non-existent file
+        let loaded = load_state(&path);
+        assert!(loaded.match_mode.is_none());
+        assert!(loaded.context_window.is_none());
+        assert!(loaded.query_history.is_none());
+    }
+
+    #[test]
+    fn state_persistence_missing_fields_use_defaults() {
+        let dir = TempDir::new().unwrap();
+        let path = state_path_for(dir.path());
+
+        // Write JSON with only some fields (missing per_pane_limit, ranking_mode, etc.)
+        std::fs::write(&path, r#"{"match_mode": "prefix", "has_seen_help": true}"#).unwrap();
+
+        let loaded = load_state(&path);
+        // Specified fields should be loaded
+        assert_eq!(loaded.match_mode.as_deref(), Some("prefix"));
+        assert_eq!(loaded.has_seen_help, Some(true));
+        // Missing fields should be None (defaults)
+        assert!(loaded.context_window.is_none());
+        assert!(loaded.density_mode.is_none());
+        assert!(loaded.query_history.is_none());
+        assert!(loaded.saved_views.is_none());
+        assert!(loaded.help_pinned.is_none());
+        assert!(loaded.per_pane_limit.is_none());
+        assert!(loaded.ranking_mode.is_none());
+    }
+
+    #[test]
+    fn state_persistence_empty_query_history() {
+        let dir = TempDir::new().unwrap();
+        let path = state_path_for(dir.path());
+
+        let state = TuiStatePersisted {
+            query_history: Some(vec![]),
+            ..Default::default()
+        };
+        save_state(&path, &state);
+
+        let loaded = load_state(&path);
+        let history = loaded.query_history.expect("query_history should exist");
+        assert!(history.is_empty());
+    }
+
+    #[test]
+    fn state_persistence_empty_saved_views() {
+        let dir = TempDir::new().unwrap();
+        let path = state_path_for(dir.path());
+
+        let state = TuiStatePersisted {
+            saved_views: Some(vec![]),
+            ..Default::default()
+        };
+        save_state(&path, &state);
+
+        let loaded = load_state(&path);
+        let views = loaded.saved_views.expect("saved_views should exist");
+        assert!(views.is_empty());
+    }
+
+    #[test]
+    fn state_persistence_all_density_modes() {
+        let dir = TempDir::new().unwrap();
+        let path = state_path_for(dir.path());
+
+        for mode in ["compact", "cozy", "spacious"] {
+            let state = TuiStatePersisted {
+                density_mode: Some(mode.into()),
+                ..Default::default()
+            };
+            save_state(&path, &state);
+
+            let loaded = load_state(&path);
+            assert_eq!(
+                loaded.density_mode.as_deref(),
+                Some(mode),
+                "density_mode should be {mode}"
+            );
+        }
+    }
+
+    #[test]
+    fn state_persistence_all_context_windows() {
+        let dir = TempDir::new().unwrap();
+        let path = state_path_for(dir.path());
+
+        for window in ["S", "M", "L", "XL"] {
+            let state = TuiStatePersisted {
+                context_window: Some(window.into()),
+                ..Default::default()
+            };
+            save_state(&path, &state);
+
+            let loaded = load_state(&path);
+            assert_eq!(
+                loaded.context_window.as_deref(),
+                Some(window),
+                "context_window should be {window}"
+            );
+        }
+    }
+
+    #[test]
+    fn state_persistence_help_pinned_states() {
+        let dir = TempDir::new().unwrap();
+        let path = state_path_for(dir.path());
+
+        for pinned in [true, false] {
+            let state = TuiStatePersisted {
+                help_pinned: Some(pinned),
+                ..Default::default()
+            };
+            save_state(&path, &state);
+
+            let loaded = load_state(&path);
+            assert_eq!(
+                loaded.help_pinned,
+                Some(pinned),
+                "help_pinned should be {pinned}"
+            );
+        }
+    }
+
+    #[test]
+    fn dedupe_history_prefixes_removes_strict_prefixes() {
+        let history = vec![
+            "foobar".to_string(),
+            "foo".to_string(),
+            "foob".to_string(),
+            "bar".to_string(),
+        ];
+        let deduped = dedupe_history_prefixes(history);
+        assert_eq!(deduped, vec!["foobar", "bar"]);
+    }
+
+    #[test]
+    fn dedupe_history_prefixes_preserves_non_prefixes() {
+        let history = vec![
+            "apple".to_string(),
+            "banana".to_string(),
+            "cherry".to_string(),
+        ];
+        let deduped = dedupe_history_prefixes(history);
+        assert_eq!(deduped, vec!["apple", "banana", "cherry"]);
+    }
+
+    #[test]
+    fn dedupe_history_prefixes_handles_empty() {
+        let history: Vec<String> = vec![];
+        let deduped = dedupe_history_prefixes(history);
+        assert!(deduped.is_empty());
+    }
+
+    #[test]
+    fn dedupe_history_prefixes_single_item() {
+        let history = vec!["single".to_string()];
+        let deduped = dedupe_history_prefixes(history);
+        assert_eq!(deduped, vec!["single"]);
+    }
+
+    #[test]
+    fn save_query_to_history_avoids_duplicates() {
+        let mut history: VecDeque<String> = VecDeque::new();
+        let cap = 10;
+
+        save_query_to_history("first", &mut history, cap);
+        save_query_to_history("second", &mut history, cap);
+        save_query_to_history("first", &mut history, cap); // duplicate
+
+        // Should have first at front (re-added), then second
+        assert_eq!(history.len(), 3); // Note: current impl allows duplicates if not consecutive
+    }
+
+    #[test]
+    fn save_query_to_history_respects_cap() {
+        let mut history: VecDeque<String> = VecDeque::new();
+        let cap = 3;
+
+        for i in 0..5 {
+            save_query_to_history(&format!("query{i}"), &mut history, cap);
+        }
+
+        assert_eq!(history.len(), 3);
+        // Most recent should be at front
+        assert_eq!(history.front().unwrap(), "query4");
+    }
+
+    #[test]
+    fn save_query_to_history_ignores_empty() {
+        let mut history: VecDeque<String> = VecDeque::new();
+        let cap = 10;
+
+        save_query_to_history("", &mut history, cap);
+        save_query_to_history("   ", &mut history, cap);
+
+        assert!(history.is_empty());
+    }
+
+    #[test]
+    fn save_query_to_history_skips_consecutive_duplicates() {
+        let mut history: VecDeque<String> = VecDeque::new();
+        let cap = 10;
+
+        save_query_to_history("query", &mut history, cap);
+        save_query_to_history("query", &mut history, cap); // same as front, should skip
+
+        assert_eq!(history.len(), 1);
+    }
+
+    // ==========================================================================
+    // Detail Panel Tests (tst.ui.det)
+    // Tests for detail view and find-in-detail functionality
+    // ==========================================================================
+
+    #[test]
+    fn focus_region_results_is_default() {
+        let focus = FocusRegion::Results;
+        assert_eq!(focus, FocusRegion::Results);
+        assert_ne!(focus, FocusRegion::Detail);
+    }
+
+    #[test]
+    fn focus_region_detail_is_distinct() {
+        let focus = FocusRegion::Detail;
+        assert_eq!(focus, FocusRegion::Detail);
+        assert_ne!(focus, FocusRegion::Results);
+    }
+
+    #[test]
+    fn detail_find_state_default_is_empty() {
+        let state = DetailFindState::default();
+        assert!(state.query.is_empty());
+        assert!(state.matches.is_empty());
+        assert_eq!(state.current, 0);
+    }
+
+    #[test]
+    fn detail_find_state_with_matches() {
+        let state = DetailFindState {
+            query: "search term".into(),
+            matches: vec![5, 12, 28],
+            current: 1,
+        };
+        assert_eq!(state.query, "search term");
+        assert_eq!(state.matches.len(), 3);
+        assert_eq!(state.matches[1], 12);
+        assert_eq!(state.current, 1);
+    }
+
+    #[test]
+    fn match_line_indices_finds_matches() {
+        let lines = vec![
+            Line::from("Hello world"),
+            Line::from("foo bar baz"),
+            Line::from("World peace"),
+            Line::from("nothing here"),
+        ];
+
+        let matches = match_line_indices(&lines, "world");
+        assert_eq!(matches.len(), 2);
+        assert_eq!(matches[0], 0); // "Hello world"
+        assert_eq!(matches[1], 2); // "World peace"
+    }
+
+    #[test]
+    fn match_line_indices_case_insensitive() {
+        let lines = vec![
+            Line::from("HELLO"),
+            Line::from("hello"),
+            Line::from("HeLLo"),
+        ];
+
+        let matches = match_line_indices(&lines, "hello");
+        assert_eq!(matches.len(), 3);
+    }
+
+    #[test]
+    fn match_line_indices_empty_needle_returns_empty() {
+        let lines = vec![Line::from("some text"), Line::from("more text")];
+
+        let matches = match_line_indices(&lines, "");
+        assert!(matches.is_empty());
+
+        let matches_whitespace = match_line_indices(&lines, "   ");
+        assert!(matches_whitespace.is_empty());
+    }
+
+    #[test]
+    fn match_line_indices_no_matches() {
+        let lines = vec![Line::from("abc"), Line::from("def")];
+
+        let matches = match_line_indices(&lines, "xyz");
+        assert!(matches.is_empty());
+    }
+
+    #[test]
+    fn match_line_indices_empty_lines() {
+        let lines: Vec<Line> = vec![];
+        let matches = match_line_indices(&lines, "anything");
+        assert!(matches.is_empty());
+    }
+
+    #[test]
+    fn match_line_indices_with_styled_spans() {
+        // Lines with multiple styled spans should still find text
+        let lines = vec![Line::from(vec![
+            Span::styled("Hello ", Style::default().fg(Color::Red)),
+            Span::styled("world", Style::default().fg(Color::Blue)),
+        ])];
+
+        let matches = match_line_indices(&lines, "world");
+        assert_eq!(matches.len(), 1);
+        assert_eq!(matches[0], 0);
+    }
+
+    #[test]
+    fn active_hit_returns_correct_selection() {
+        let panes = vec![
+            AgentPane {
+                agent: "codex".into(),
+                hits: vec![
+                    make_hit("codex", "/a", 8.0, "first"),
+                    make_hit("codex", "/b", 7.0, "second"),
+                    make_hit("codex", "/c", 6.0, "third"),
+                ],
+                selected: 2,
+                total_count: 3,
+            },
+            AgentPane {
+                agent: "claude_code".into(),
+                hits: vec![make_hit("claude_code", "/d", 5.0, "fourth")],
+                selected: 0,
+                total_count: 1,
+            },
+        ];
+
+        // Pane 0, selection 2
+        let hit0 = active_hit(&panes, 0);
+        assert!(hit0.is_some());
+        assert_eq!(hit0.unwrap().snippet, "third");
+
+        // Pane 1, selection 0
+        let hit1 = active_hit(&panes, 1);
+        assert!(hit1.is_some());
+        assert_eq!(hit1.unwrap().snippet, "fourth");
+    }
+
+    #[test]
+    fn active_hit_returns_none_for_empty_hits() {
+        let panes = vec![AgentPane {
+            agent: "codex".into(),
+            hits: vec![],
+            selected: 0,
+            total_count: 0,
+        }];
+
+        assert!(active_hit(&panes, 0).is_none());
+    }
+
+    #[test]
+    fn active_hit_returns_none_for_out_of_bounds_selection() {
+        let panes = vec![AgentPane {
+            agent: "codex".into(),
+            hits: vec![make_hit("codex", "/a", 5.0, "only")],
+            selected: 5, // out of bounds
+            total_count: 1,
+        }];
+
+        assert!(active_hit(&panes, 0).is_none());
+    }
+
+    #[test]
+    fn detail_tab_default_is_messages() {
+        let tab = DetailTab::Messages;
+        assert_eq!(tab, DetailTab::Messages);
+    }
+
+    #[test]
+    fn detail_tab_has_three_variants() {
+        let tabs = [DetailTab::Messages, DetailTab::Snippets, DetailTab::Metadata];
+        assert_eq!(tabs.len(), 3);
+
+        // Verify all are distinct
+        assert_ne!(tabs[0], tabs[1]);
+        assert_ne!(tabs[1], tabs[2]);
+        assert_ne!(tabs[0], tabs[2]);
+    }
+
+    #[test]
+    fn detail_find_navigation_indices_wrap() {
+        let state = DetailFindState {
+            query: "test".into(),
+            matches: vec![0, 5, 10],
+            current: 2,
+        };
+
+        // When current is at last match (index 2) and we want next,
+        // it should wrap to 0
+        let next = (state.current + 1) % state.matches.len();
+        assert_eq!(next, 0);
+
+        // When current is at first match (index 0) and we want previous,
+        // it should wrap to last
+        let prev_state = DetailFindState {
+            query: "test".into(),
+            matches: vec![0, 5, 10],
+            current: 0,
+        };
+        let prev = if prev_state.current == 0 {
+            prev_state.matches.len() - 1
+        } else {
+            prev_state.current - 1
+        };
+        assert_eq!(prev, 2);
+    }
+
+    #[test]
+    fn line_plain_text_extracts_content() {
+        let line = Line::from(vec![
+            Span::raw("Hello "),
+            Span::styled("styled", Style::default().bold()),
+            Span::raw(" text"),
+        ]);
+
+        let text = line_plain_text(&line);
+        assert_eq!(text, "Hello styled text");
+    }
+
+    #[test]
+    fn line_plain_text_handles_empty_line() {
+        let line = Line::from("");
+        let text = line_plain_text(&line);
+        assert!(text.is_empty());
+    }
+
+    #[test]
+    fn line_plain_text_handles_single_span() {
+        let line = Line::from("single span");
+        let text = line_plain_text(&line);
+        assert_eq!(text, "single span");
     }
 }

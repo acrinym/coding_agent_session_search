@@ -256,7 +256,7 @@ fn codex_detect_without_sessions_dir() {
     assert!(!result.detected);
 }
 
-/// Test user_message event type
+/// Test `user_message` event type
 #[test]
 fn codex_connector_handles_user_message_event() {
     let dir = TempDir::new().unwrap();
@@ -451,7 +451,7 @@ fn codex_connector_assigns_sequential_indices() {
     assert_eq!(c.messages[2].idx, 2);
 }
 
-/// Test external_id comes from filename
+/// Test `external_id` comes from filename
 #[test]
 fn codex_connector_sets_external_id_from_filename() {
     let dir = TempDir::new().unwrap();
@@ -541,7 +541,7 @@ fn codex_connector_parses_millis_timestamp() {
     assert_eq!(c.ended_at, Some(1700000002000));
 }
 
-/// Test tool_use blocks in content are flattened properly
+/// Test `tool_use` blocks in content are flattened properly
 #[test]
 fn codex_connector_flattens_tool_use_blocks() {
     let dir = TempDir::new().unwrap();
@@ -577,7 +577,7 @@ fn codex_connector_flattens_tool_use_blocks() {
     assert!(assistant.content.contains("/test/file.rs"));
 }
 
-/// Test missing cwd in session_meta results in None workspace
+/// Test missing cwd in `session_meta` results in None workspace
 #[test]
 fn codex_connector_handles_missing_cwd() {
     let dir = TempDir::new().unwrap();
@@ -746,7 +746,7 @@ fn codex_connector_handles_nested_directories() {
     assert!(convs[0].source_path.to_string_lossy().contains("sub2"));
 }
 
-/// Test turn_aborted event is filtered out
+/// Test `turn_aborted` event is filtered out
 #[test]
 fn codex_connector_filters_turn_aborted() {
     let dir = TempDir::new().unwrap();
@@ -814,7 +814,7 @@ fn codex_connector_truncates_long_title() {
     assert_eq!(c.title.as_ref().unwrap().len(), 100);
 }
 
-/// Test source_path matches actual file path
+/// Test `source_path` matches actual file path
 #[test]
 fn codex_connector_sets_source_path() {
     let dir = TempDir::new().unwrap();

@@ -48,7 +48,10 @@ impl TestTracing {
 
     /// Return captured log lines (trimmed of trailing newline) for fine-grained checks.
     pub fn lines(&self) -> Vec<String> {
-        self.output().lines().map(|l| l.to_string()).collect()
+        self.output()
+            .lines()
+            .map(std::string::ToString::to_string)
+            .collect()
     }
 }
 
@@ -207,7 +210,7 @@ impl ConversationFixtureBuilder {
         )
     }
 
-    /// Build a NormalizedConversation (connector-facing).
+    /// Build a `NormalizedConversation` (connector-facing).
     pub fn build_normalized(self) -> NormalizedConversation {
         let messages: Vec<NormalizedMessage> = (0..self.message_count)
             .map(|i| {
@@ -326,7 +329,7 @@ impl ConversationFixtureBuilder {
     }
 }
 
-/// Helper to fluently assert SearchHit fields in tests.
+/// Helper to fluently assert `SearchHit` fields in tests.
 pub struct SearchHitAssert<'a> {
     hit: &'a SearchHit,
 }
@@ -337,7 +340,7 @@ pub fn assert_hit(hit: &SearchHit) -> SearchHitAssert<'_> {
 }
 
 #[allow(dead_code)]
-impl<'a> SearchHitAssert<'a> {
+impl SearchHitAssert<'_> {
     pub fn title(self, expected: impl AsRef<str>) -> Self {
         assert_eq!(
             self.hit.title,

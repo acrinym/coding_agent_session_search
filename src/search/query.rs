@@ -143,7 +143,8 @@ impl QueryExplanation {
     /// Build explanation from query string and filters
     pub fn analyze(query: &str, filters: &SearchFilters) -> Self {
         let sanitized = sanitize_query(query);
-        let tokens = parse_boolean_query(&sanitized);
+        // Parse original query to preserve quotes for phrases
+        let tokens = parse_boolean_query(query);
 
         // Extract terms, phrases, and operators
         let mut parsed = ParsedQuery::default();
@@ -302,7 +303,7 @@ impl QueryExplanation {
         let complexity = term_count + operator_count * 2 + phrase_count * 2;
 
         if complexity > 6 || has_time_filter {
-            QueryCost::Medium
+            QueryCost::High
         } else if complexity > 2 {
             QueryCost::Medium
         } else {
@@ -348,7 +349,11 @@ impl QueryExplanation {
         }
     }
 
-    fn generate_warnings(parsed: &ParsedQuery, sanitized: &str, filters: &SearchFilters) -> Vec<String> {
+    fn generate_warnings(
+        parsed: &ParsedQuery,
+        sanitized: &str,
+        filters: &SearchFilters,
+    ) -> Vec<String> {
         let mut warnings = Vec::new();
 
         // Warn about leading wildcards
@@ -394,10 +399,15 @@ impl QueryExplanation {
         warnings
     }
 
-    /// Update wildcard_applied flag (called after search_with_fallback)
+    /// Update `wildcard_applied` flag (called after `search_with_fallback`)
     pub fn with_wildcard_fallback(mut self, applied: bool) -> Self {
         self.wildcard_applied = applied;
-        if applied && !self.warnings.iter().any(|w| w.contains("wildcard fallback")) {
+        if applied
+            && !self
+                .warnings
+                .iter()
+                .any(|w| w.contains("wildcard fallback"))
+        {
             self.warnings.push(
                 "Wildcard fallback was applied automatically due to sparse exact matches"
                     .to_string(),
@@ -473,7 +483,7 @@ impl QuerySuggestion {
     fn spelling(_query: &str, corrected: &str) -> Self {
         Self {
             kind: SuggestionKind::SpellingFix,
-            message: format!("Did you mean: \"{}\"?", corrected),
+            message: format!("Did you mean: \"{corrected}\"?"),
             suggested_query: Some(corrected.to_string()),
             suggested_filters: None,
             shortcut: None,
@@ -484,7 +494,7 @@ impl QuerySuggestion {
         let wildcard_query = format!("*{}*", query.trim_matches('*'));
         Self {
             kind: SuggestionKind::WildcardQuery,
-            message: format!("Try broader search: \"{}\"", wildcard_query),
+            message: format!("Try broader search: \"{wildcard_query}\""),
             suggested_query: Some(wildcard_query),
             suggested_filters: None,
             shortcut: None,
@@ -494,7 +504,7 @@ impl QuerySuggestion {
     fn remove_agent_filter(current_agent: &str) -> Self {
         Self {
             kind: SuggestionKind::RemoveFilter,
-            message: format!("Remove agent filter (currently: {})", current_agent),
+            message: format!("Remove agent filter (currently: {current_agent})"),
             suggested_query: None,
             suggested_filters: Some(SearchFilters::default()),
             shortcut: None,
@@ -506,7 +516,7 @@ impl QuerySuggestion {
         filters.agents.insert(agent_slug.to_string());
         Self {
             kind: SuggestionKind::AlternateAgent,
-            message: format!("Try searching in: {}", agent_slug),
+            message: format!("Try searching in: {agent_slug}"),
             suggested_query: None,
             suggested_filters: Some(filters),
             shortcut: None,
@@ -638,7 +648,7 @@ struct CachedHit {
 
 impl CachedHit {
     /// Approximate byte size of this cached hit (rough estimate for memory guardrails).
-    /// Includes SearchHit strings + lowercase copies + bloom filter.
+    /// Includes `SearchHit` strings + lowercase copies + bloom filter.
     fn approx_bytes(&self) -> usize {
         // Base struct overhead
         let base = std::mem::size_of::<Self>();
@@ -651,7 +661,7 @@ impl CachedHit {
             + self.hit.workspace.len();
         // Lowercase cache copies
         let lc_strings = self.lc_content.len()
-            + self.lc_title.as_ref().map(|s| s.len()).unwrap_or(0)
+            + self.lc_title.as_ref().map_or(0, std::string::String::len)
             + self.lc_snippet.len();
         base + hit_strings + lc_strings
     }
@@ -694,12 +704,11 @@ impl CacheShards {
     fn put(&mut self, shard_name: &str, key: String, value: Vec<CachedHit>) {
         let shard = self.shard_mut(shard_name);
         let new_cost = value.len();
-        let new_bytes: usize = value.iter().map(|h| h.approx_bytes()).sum();
+        let new_bytes: usize = value.iter().map(CachedHit::approx_bytes).sum();
         // Subtract old entry's cost/bytes if replacing
-        let (old_cost, old_bytes) = shard
-            .get(&key)
-            .map(|v| (v.len(), v.iter().map(|h| h.approx_bytes()).sum()))
-            .unwrap_or((0, 0));
+        let (old_cost, old_bytes) = shard.get(&key).map_or((0, 0), |v| {
+            (v.len(), v.iter().map(CachedHit::approx_bytes).sum())
+        });
         shard.put(key, value);
         self.total_cost += new_cost.saturating_sub(old_cost);
         self.total_bytes += new_bytes.saturating_sub(old_bytes);
@@ -714,7 +723,7 @@ impl CacheShards {
             let mut evicted = false;
             for shard in self.shards.values_mut() {
                 if let Some((_k, v)) = shard.pop_lru() {
-                    let evicted_bytes: usize = v.iter().map(|h| h.approx_bytes()).sum();
+                    let evicted_bytes: usize = v.iter().map(CachedHit::approx_bytes).sum();
                     self.total_cost = self.total_cost.saturating_sub(v.len());
                     self.total_bytes = self.total_bytes.saturating_sub(evicted_bytes);
                     self.eviction_count += 1;
@@ -815,7 +824,7 @@ fn levenshtein_distance(a: &str, b: &str) -> usize {
     for (i, a_char) in a_chars.iter().enumerate() {
         curr_row[0] = i + 1;
         for (j, b_char) in b_chars.iter().enumerate() {
-            let cost = if a_char == b_char { 0 } else { 1 };
+            let cost = usize::from(a_char != b_char);
             curr_row[j + 1] = (prev_row[j + 1] + 1) // deletion
                 .min(curr_row[j] + 1) // insertion
                 .min(prev_row[j] + cost); // substitution
@@ -872,7 +881,7 @@ impl WildcardPattern {
         }
     }
 
-    /// Convert to regex pattern for Tantivy RegexQuery
+    /// Convert to regex pattern for Tantivy `RegexQuery`
     fn to_regex(&self) -> Option<String> {
         match self {
             WildcardPattern::Suffix(core) => Some(format!(".*{}", escape_regex(core))),
@@ -881,7 +890,7 @@ impl WildcardPattern {
         }
     }
 
-    /// Convert to the corresponding public MatchType
+    /// Convert to the corresponding public `MatchType`
     fn to_match_type(&self) -> MatchType {
         match self {
             WildcardPattern::Exact(_) => MatchType::Exact,
@@ -1001,7 +1010,7 @@ fn has_boolean_operators(query: &str) -> bool {
 }
 
 /// Build Tantivy query clauses from boolean tokens.
-/// Returns clauses for use in a BooleanQuery.
+/// Returns clauses for use in a `BooleanQuery`.
 fn build_boolean_query_clauses(
     tokens: &[QueryToken],
     fields: &crate::search::tantivy::Fields,
@@ -1132,7 +1141,7 @@ fn dominant_match_type(query: &str) -> MatchType {
 }
 
 /// Build query clauses for a single term based on its wildcard pattern.
-/// Returns a Vec of (Occur::Should, Query) for use in a BooleanQuery.
+/// Returns a Vec of (`Occur::Should`, Query) for use in a `BooleanQuery`.
 fn build_term_query_clauses(
     pattern: &WildcardPattern,
     fields: &crate::search::tantivy::Fields,
@@ -1499,7 +1508,11 @@ impl SearchClient {
 
         // 2. Suggest removing agent filter if one is set
         if !filters.agents.is_empty() {
-            let agents: Vec<&str> = filters.agents.iter().map(|s| s.as_str()).collect();
+            let agents: Vec<&str> = filters
+                .agents
+                .iter()
+                .map(std::string::String::as_str)
+                .collect();
             let agent_str = agents.join(", ");
             suggestions.push(QuerySuggestion::remove_agent_filter(&agent_str).with_shortcut(2));
         }
@@ -1617,10 +1630,13 @@ impl SearchClient {
         }
 
         if !filters.agents.is_empty() {
-            let terms = filters
+            let agent_list: Vec<_> = filters.agents.iter().cloned().collect();
+            tracing::debug!(agents = ?agent_list, "building agent filter query");
+            let terms: Vec<_> = filters
                 .agents
                 .into_iter()
                 .map(|agent| {
+                    tracing::debug!(agent = %agent, "adding agent term query");
                     (
                         Occur::Should,
                         Box::new(TermQuery::new(
@@ -1630,6 +1646,7 @@ impl SearchClient {
                     )
                 })
                 .collect();
+            tracing::debug!(num_agent_terms = terms.len(), "agent filter terms");
             clauses.push((Occur::Must, Box::new(BooleanQuery::new(terms))));
         }
 
@@ -1652,14 +1669,12 @@ impl SearchClient {
 
         if filters.created_from.is_some() || filters.created_to.is_some() {
             use std::ops::Bound::{Included, Unbounded};
-            let lower = filters
-                .created_from
-                .map(|v| Included(Term::from_field_i64(fields.created_at, v)))
-                .unwrap_or(Unbounded);
-            let upper = filters
-                .created_to
-                .map(|v| Included(Term::from_field_i64(fields.created_at, v)))
-                .unwrap_or(Unbounded);
+            let lower = filters.created_from.map_or(Unbounded, |v| {
+                Included(Term::from_field_i64(fields.created_at, v))
+            });
+            let upper = filters.created_to.map_or(Unbounded, |v| {
+                Included(Term::from_field_i64(fields.created_at, v))
+            });
             let range = RangeQuery::new(lower, upper);
             clauses.push((Occur::Must, Box::new(range)));
         }
@@ -1996,7 +2011,7 @@ fn hash_token(tok: &str) -> u64 {
     // Simple 64-bit djb2-style hash mapped to bit position 0..63
     let mut h: u64 = 5381;
     for b in tok.as_bytes() {
-        h = ((h << 5).wrapping_add(h)).wrapping_add(*b as u64);
+        h = ((h << 5).wrapping_add(h)).wrapping_add(u64::from(*b));
     }
     1u64 << (h % 64)
 }
@@ -2018,11 +2033,7 @@ fn hit_matches_query_cached(hit: &CachedHit, query: &str) -> bool {
     // Verify each token exists in at least one field (implicit AND)
     tokens.iter().all(|t| {
         hit.lc_content.contains(t)
-            || hit
-                .lc_title
-                .as_ref()
-                .map(|title| title.contains(t))
-                .unwrap_or(false)
+            || hit.lc_title.as_ref().is_some_and(|title| title.contains(t))
             || hit.lc_snippet.contains(t)
     })
 }
@@ -2034,7 +2045,7 @@ fn is_prefix_only(query: &str) -> bool {
     }
     tokens
         .iter()
-        .all(|t| !t.is_empty() && t.chars().all(|c| c.is_alphanumeric()))
+        .all(|t| !t.is_empty() && t.chars().all(char::is_alphanumeric))
 }
 
 fn quick_prefix_snippet(content: &str, query: &str, max_chars: usize) -> String {
@@ -2087,12 +2098,12 @@ fn filters_fingerprint(filters: &SearchFilters) -> String {
     if !filters.agents.is_empty() {
         let mut v: Vec<_> = filters.agents.iter().cloned().collect();
         v.sort();
-        parts.push(format!("a:{:?}", v));
+        parts.push(format!("a:{v:?}"));
     }
     if !filters.workspaces.is_empty() {
         let mut v: Vec<_> = filters.workspaces.iter().cloned().collect();
         v.sort();
-        parts.push(format!("w:{:?}", v));
+        parts.push(format!("w:{v:?}"));
     }
     if let Some(f) = filters.created_from {
         parts.push(format!("from:{f}"));
@@ -2253,12 +2264,12 @@ mod tests {
             _warm_handle: None,
             _shared_filters: Arc::new(Mutex::new(())),
             metrics: Metrics::default(),
-            cache_namespace: format!("v{}|schema:test", CACHE_KEY_VERSION),
+            cache_namespace: format!("v{CACHE_KEY_VERSION}|schema:test"),
         };
 
         let hits = vec![SearchHit {
             title: "こんにちは".into(),
-            snippet: "".into(),
+            snippet: String::new(),
             content: "こんにちは 世界".into(),
             score: 1.0,
             source_path: "p".into(),
@@ -2713,7 +2724,7 @@ mod tests {
             _warm_handle: None,
             _shared_filters: Arc::new(Mutex::new(())),
             metrics: Metrics::default(),
-            cache_namespace: format!("v{}|schema:test", CACHE_KEY_VERSION),
+            cache_namespace: format!("v{CACHE_KEY_VERSION}|schema:test"),
         };
 
         let hits = client.search("*handler", SearchFilters::default(), 5, 0)?;
@@ -2827,7 +2838,7 @@ mod tests {
             _warm_handle: None,
             _shared_filters: Arc::new(Mutex::new(())),
             metrics: Metrics::default(),
-            cache_namespace: format!("v{}|schema:test", CACHE_KEY_VERSION),
+            cache_namespace: format!("v{CACHE_KEY_VERSION}|schema:test"),
         };
 
         let hit = SearchHit {
@@ -2876,7 +2887,7 @@ mod tests {
             _warm_handle: None,
             _shared_filters: Arc::new(Mutex::new(())),
             metrics: Metrics::default(),
-            cache_namespace: format!("v{}|schema:test", CACHE_KEY_VERSION),
+            cache_namespace: format!("v{CACHE_KEY_VERSION}|schema:test"),
         };
 
         let hit = SearchHit {
@@ -2921,7 +2932,7 @@ mod tests {
             _warm_handle: None,
             _shared_filters: Arc::new(Mutex::new(())),
             metrics: Metrics::default(),
-            cache_namespace: format!("v{}|schema:test", CACHE_KEY_VERSION),
+            cache_namespace: format!("v{CACHE_KEY_VERSION}|schema:test"),
         };
 
         client.metrics.inc_cache_hits();
@@ -2952,7 +2963,7 @@ mod tests {
             _warm_handle: None,
             _shared_filters: Arc::new(Mutex::new(())),
             metrics: Metrics::default(),
-            cache_namespace: format!("v{}|schema:test", CACHE_KEY_VERSION),
+            cache_namespace: format!("v{CACHE_KEY_VERSION}|schema:test"),
         };
 
         let hit = SearchHit {
@@ -3008,7 +3019,7 @@ mod tests {
             _warm_handle: None,
             _shared_filters: Arc::new(Mutex::new(())),
             metrics: Metrics::default(),
-            cache_namespace: format!("v{}|schema:test", CACHE_KEY_VERSION),
+            cache_namespace: format!("v{CACHE_KEY_VERSION}|schema:test"),
         };
 
         // Large content to exceed byte cap quickly
@@ -3116,15 +3127,15 @@ mod tests {
         // Empty after trimming wildcards
         assert_eq!(
             WildcardPattern::parse("*"),
-            WildcardPattern::Exact("".into())
+            WildcardPattern::Exact(String::new())
         );
         assert_eq!(
             WildcardPattern::parse("**"),
-            WildcardPattern::Exact("".into())
+            WildcardPattern::Exact(String::new())
         );
         assert_eq!(
             WildcardPattern::parse("***"),
-            WildcardPattern::Exact("".into())
+            WildcardPattern::Exact(String::new())
         );
 
         // Single char with wildcards
@@ -4212,8 +4223,7 @@ mod tests {
             if let Some(ts) = hit.created_at {
                 assert!(
                     (400..=600).contains(&ts),
-                    "Date range filter violated: got ts={} outside [400, 600]",
-                    ts
+                    "Date range filter violated: got ts={ts} outside [400, 600]"
                 );
             }
         }
@@ -4315,7 +4325,7 @@ mod tests {
             _warm_handle: None,
             _shared_filters: Arc::new(Mutex::new(())),
             metrics: Metrics::default(),
-            cache_namespace: format!("v{}|schema:test", CACHE_KEY_VERSION),
+            cache_namespace: format!("v{CACHE_KEY_VERSION}|schema:test"),
         };
 
         let filters_empty = SearchFilters::default();
@@ -4378,15 +4388,15 @@ mod tests {
     fn wildcard_pattern_empty_after_trim_returns_exact_empty() {
         assert_eq!(
             WildcardPattern::parse("*"),
-            WildcardPattern::Exact("".into())
+            WildcardPattern::Exact(String::new())
         );
         assert_eq!(
             WildcardPattern::parse("**"),
-            WildcardPattern::Exact("".into())
+            WildcardPattern::Exact(String::new())
         );
         assert_eq!(
             WildcardPattern::parse("***"),
-            WildcardPattern::Exact("".into())
+            WildcardPattern::Exact(String::new())
         );
     }
 
@@ -4787,5 +4797,142 @@ mod tests {
         assert_eq!(hits.len(), 2);
 
         Ok(())
+    }
+
+    // ========================================================================
+    // QueryExplanation tests
+    // ========================================================================
+
+    #[test]
+    fn explanation_classifies_simple_query() {
+        let exp = QueryExplanation::analyze("hello", &SearchFilters::default());
+        assert_eq!(exp.query_type, QueryType::Simple);
+        assert_eq!(exp.index_strategy, IndexStrategy::EdgeNgram);
+        assert_eq!(exp.estimated_cost, QueryCost::Low);
+        assert!(exp.parsed.terms.len() == 1);
+        assert_eq!(exp.parsed.terms[0].text, "hello");
+        assert_eq!(exp.parsed.terms[0].pattern, "exact");
+    }
+
+    #[test]
+    fn explanation_classifies_wildcard_query() {
+        let exp = QueryExplanation::analyze("*handler*", &SearchFilters::default());
+        assert_eq!(exp.query_type, QueryType::Wildcard);
+        assert_eq!(exp.index_strategy, IndexStrategy::RegexScan);
+        assert_eq!(exp.estimated_cost, QueryCost::High);
+        assert!(exp.parsed.terms[0].pattern.contains("substring"));
+        assert!(exp.warnings.iter().any(|w| w.contains("regex scan")));
+    }
+
+    #[test]
+    fn explanation_classifies_boolean_query() {
+        let exp = QueryExplanation::analyze("foo AND bar", &SearchFilters::default());
+        assert_eq!(exp.query_type, QueryType::Boolean);
+        assert_eq!(exp.index_strategy, IndexStrategy::BooleanCombination);
+        assert!(exp.parsed.operators.contains(&"AND".to_string()));
+    }
+
+    #[test]
+    fn explanation_classifies_phrase_query() {
+        let exp = QueryExplanation::analyze("\"exact phrase\"", &SearchFilters::default());
+        assert_eq!(exp.query_type, QueryType::Phrase);
+        assert!(exp.parsed.phrases.contains(&"exact phrase".to_string()));
+    }
+
+    #[test]
+    fn explanation_handles_filtered_query() {
+        let mut filters = SearchFilters::default();
+        filters.agents.insert("codex".to_string());
+
+        let exp = QueryExplanation::analyze("test", &filters);
+        assert_eq!(exp.query_type, QueryType::Filtered);
+        assert_eq!(exp.filters_summary.agent_count, 1);
+        assert!(
+            exp.filters_summary
+                .description
+                .as_ref()
+                .unwrap()
+                .contains("1 agent")
+        );
+        assert!(exp.warnings.iter().any(|w| w.contains("codex")));
+    }
+
+    #[test]
+    fn explanation_handles_empty_query() {
+        let exp = QueryExplanation::analyze("", &SearchFilters::default());
+        assert_eq!(exp.query_type, QueryType::Empty);
+        assert_eq!(exp.index_strategy, IndexStrategy::FullScan);
+        assert_eq!(exp.estimated_cost, QueryCost::High);
+        assert!(exp.warnings.iter().any(|w| w.contains("Empty query")));
+    }
+
+    #[test]
+    fn explanation_warns_short_terms() {
+        let exp = QueryExplanation::analyze("a", &SearchFilters::default());
+        assert!(exp.warnings.iter().any(|w| w.contains("Very short term")));
+    }
+
+    #[test]
+    fn explanation_with_wildcard_fallback() {
+        let exp = QueryExplanation::analyze("test", &SearchFilters::default())
+            .with_wildcard_fallback(true);
+        assert!(exp.wildcard_applied);
+        // Message starts with capital W: "Wildcard fallback was applied..."
+        assert!(exp.warnings.iter().any(|w| w.contains("Wildcard fallback")));
+    }
+
+    #[test]
+    fn explanation_complex_query_has_higher_cost() {
+        let exp = QueryExplanation::analyze(
+            "foo AND bar OR baz NOT qux AND \"phrase here\"",
+            &SearchFilters::default(),
+        );
+        assert_eq!(exp.query_type, QueryType::Boolean);
+        // Complex query should have Medium or High cost
+        assert!(matches!(
+            exp.estimated_cost,
+            QueryCost::Medium | QueryCost::High
+        ));
+    }
+
+    #[test]
+    fn explanation_preserves_original_query() {
+        let exp = QueryExplanation::analyze("Hello World!", &SearchFilters::default());
+        assert_eq!(exp.original_query, "Hello World!");
+        // Sanitized replaces special chars with spaces but preserves case
+        assert!(exp.sanitized_query.contains("Hello"));
+        // ! is replaced with space
+        assert!(!exp.sanitized_query.contains("!"));
+    }
+
+    #[test]
+    fn explanation_detects_not_operator() {
+        let exp = QueryExplanation::analyze("foo NOT bar", &SearchFilters::default());
+        assert!(exp.parsed.operators.contains(&"NOT".to_string()));
+        // Second term should be marked as negated
+        assert!(
+            exp.parsed
+                .terms
+                .iter()
+                .any(|t| t.negated && t.text == "bar")
+        );
+    }
+
+    #[test]
+    fn explanation_implicit_and() {
+        let exp = QueryExplanation::analyze("foo bar", &SearchFilters::default());
+        assert!(exp.parsed.implicit_and);
+        assert_eq!(exp.parsed.terms.len(), 2);
+    }
+
+    #[test]
+    fn explanation_serializes_to_json() {
+        let exp = QueryExplanation::analyze("test query", &SearchFilters::default());
+        let json = serde_json::to_value(&exp).expect("should serialize");
+        assert!(json["original_query"].is_string());
+        assert!(json["query_type"].is_string());
+        assert!(json["index_strategy"].is_string());
+        assert!(json["estimated_cost"].is_string());
+        assert!(json["parsed"]["terms"].is_array());
     }
 }

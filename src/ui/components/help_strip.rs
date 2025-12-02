@@ -23,13 +23,13 @@ pub fn draw_help_strip(
         .flat_map(|(key, label)| {
             vec![
                 Span::styled(
-                    format!(" {} ", key),
+                    format!(" {key} "),
                     Style::default()
                         .fg(palette.fg)
                         .bg(palette.surface)
                         .add_modifier(Modifier::BOLD),
                 ),
-                Span::styled(format!("{}  ", label), Style::default().fg(palette.hint)),
+                Span::styled(format!("{label}  "), Style::default().fg(palette.hint)),
             ]
         })
         .collect();

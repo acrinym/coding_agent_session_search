@@ -223,12 +223,12 @@ pub fn default_actions() -> Vec<PaletteItem> {
     for slot in 1..=9 {
         items.push(item(
             PaletteAction::SaveViewSlot(slot),
-            format!("Save view to slot {}", slot),
+            format!("Save view to slot {slot}"),
             "Ctrl+<n>",
         ));
         items.push(item(
             PaletteAction::LoadViewSlot(slot),
-            format!("Load view from slot {}", slot),
+            format!("Load view from slot {slot}"),
             "Shift+<n>",
         ));
     }

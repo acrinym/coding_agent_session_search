@@ -59,7 +59,7 @@ fn aider_parses_chat_history() {
     assert!(second_msg.content.contains("Added src/main.rs"));
 }
 
-/// Test that agent_slug is always "aider"
+/// Test that `agent_slug` is always "aider"
 #[test]
 fn aider_sets_agent_slug() {
     let tmp = TempDir::new().unwrap();
@@ -76,7 +76,7 @@ fn aider_sets_agent_slug() {
     assert_eq!(convs[0].agent_slug, "aider");
 }
 
-/// Test that source_path is set to the chat history file
+/// Test that `source_path` is set to the chat history file
 #[test]
 fn aider_sets_source_path() {
     let tmp = TempDir::new().unwrap();
@@ -93,7 +93,7 @@ fn aider_sets_source_path() {
     assert_eq!(convs[0].source_path, path);
 }
 
-/// Test external_id from filename
+/// Test `external_id` from filename
 #[test]
 fn aider_sets_external_id_from_filename() {
     let tmp = TempDir::new().unwrap();
@@ -158,7 +158,7 @@ fn aider_sets_workspace_to_parent() {
 // TIMESTAMP TESTS
 // =============================================================================
 
-/// Test started_at and ended_at are set from file mtime
+/// Test `started_at` and `ended_at` are set from file mtime
 #[test]
 fn aider_timestamps_from_mtime() {
     let tmp = TempDir::new().unwrap();
@@ -178,7 +178,7 @@ fn aider_timestamps_from_mtime() {
     assert_eq!(convs[0].started_at, convs[0].ended_at);
 }
 
-/// Test since_ts filtering excludes old files
+/// Test `since_ts` filtering excludes old files
 #[test]
 fn aider_since_ts_filters_old_files() {
     let tmp = TempDir::new().unwrap();
@@ -197,7 +197,7 @@ fn aider_since_ts_filters_old_files() {
     assert!(convs.is_empty());
 }
 
-/// Test since_ts=None includes all files
+/// Test `since_ts=None` includes all files
 #[test]
 fn aider_no_since_ts_includes_all() {
     let tmp = TempDir::new().unwrap();
@@ -722,7 +722,7 @@ fn aider_message_extra_is_empty() {
     }
 }
 
-/// Test message created_at is None (aider doesn't store per-message timestamps)
+/// Test message `created_at` is None (aider doesn't store per-message timestamps)
 #[test]
 fn aider_message_created_at_is_none() {
     let tmp = TempDir::new().unwrap();

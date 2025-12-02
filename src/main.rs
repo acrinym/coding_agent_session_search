@@ -15,7 +15,7 @@ async fn main() -> anyhow::Result<()> {
                     "retryable": err.retryable,
                 }
             });
-            eprintln!("{}", payload);
+            eprintln!("{payload}");
             std::process::exit(err.code);
         }
     }

@@ -1,7 +1,7 @@
 //! Bookmarks system for saving and annotating search results.
 //!
 //! Provides persistent storage for bookmarked search results with user notes
-//! and tags. Uses a separate SQLite database file to avoid schema conflicts.
+//! and tags. Uses a separate `SQLite` database file to avoid schema conflicts.
 
 use anyhow::{Context, Result};
 use rusqlite::{Connection, OptionalExtension, params};
@@ -92,7 +92,7 @@ impl Bookmark {
     pub fn tag_list(&self) -> Vec<&str> {
         self.tags
             .split(',')
-            .map(|s| s.trim())
+            .map(str::trim)
             .filter(|s| !s.is_empty())
             .collect()
     }
@@ -103,7 +103,7 @@ impl Bookmark {
     }
 }
 
-/// Storage backend for bookmarks using SQLite
+/// Storage backend for bookmarks using `SQLite`
 pub struct BookmarkStore {
     conn: Connection,
 }
@@ -132,7 +132,7 @@ impl BookmarkStore {
         Ok(Self { conn })
     }
 
-    /// Open bookmark store at the default location (data_dir/bookmarks.db)
+    /// Open bookmark store at the default location (`data_dir/bookmarks.db`)
     pub fn open_default() -> Result<Self> {
         let path = default_bookmarks_path();
         Self::open(&path)
@@ -248,7 +248,7 @@ impl BookmarkStore {
         let mut tags: Vec<String> = bookmarks
             .iter()
             .flat_map(|b| b.tag_list())
-            .map(|s| s.to_string())
+            .map(std::string::ToString::to_string)
             .collect();
 
         tags.sort();
@@ -264,7 +264,7 @@ impl BookmarkStore {
         Ok(count as usize)
     }
 
-    /// Check if a source_path + line is already bookmarked
+    /// Check if a `source_path` + line is already bookmarked
     pub fn is_bookmarked(&self, source_path: &str, line_number: Option<usize>) -> Result<bool> {
         let exists: bool = self.conn.query_row(
             "SELECT EXISTS(SELECT 1 FROM bookmarks WHERE source_path = ?1 AND line_number IS ?2)",
@@ -322,13 +322,14 @@ fn row_to_bookmark(row: &rusqlite::Row) -> Bookmark {
 
 /// Get the default bookmarks database path
 pub fn default_bookmarks_path() -> PathBuf {
-    directories::ProjectDirs::from("com", "coding-agent-search", "coding-agent-search")
-        .map(|dirs| dirs.data_dir().join("bookmarks.db"))
-        .unwrap_or_else(|| PathBuf::from("bookmarks.db"))
+    directories::ProjectDirs::from("com", "coding-agent-search", "coding-agent-search").map_or_else(
+        || PathBuf::from("bookmarks.db"),
+        |dirs| dirs.data_dir().join("bookmarks.db"),
+    )
 }
 
 /// SQL schema for bookmarks database
-const SCHEMA: &str = r#"
+const SCHEMA: &str = r"
 CREATE TABLE IF NOT EXISTS bookmarks (
     id INTEGER PRIMARY KEY,
     title TEXT NOT NULL,
@@ -346,7 +347,7 @@ CREATE TABLE IF NOT EXISTS bookmarks (
 CREATE INDEX IF NOT EXISTS idx_bookmarks_source ON bookmarks(source_path, line_number);
 CREATE INDEX IF NOT EXISTS idx_bookmarks_created ON bookmarks(created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_bookmarks_agent ON bookmarks(agent);
-"#;
+";
 
 #[cfg(test)]
 mod tests {

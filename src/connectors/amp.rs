@@ -71,10 +71,9 @@ impl Connector for AmpConnector {
         let roots = if ctx
             .data_root
             .file_name()
-            .map(|n| n.to_str().unwrap_or("").contains("amp"))
-            .unwrap_or(false)
+            .is_some_and(|n| n.to_str().unwrap_or("").contains("amp"))
             || std::fs::read_dir(&ctx.data_root)
-                .map(|mut d| d.any(|e| e.ok().map(|e| is_amp_log_file(&e.path())).unwrap_or(false)))
+                .map(|mut d| d.any(|e| e.ok().is_some_and(|e| is_amp_log_file(&e.path()))))
                 .unwrap_or(false)
         {
             vec![ctx.data_root.clone()]
@@ -115,12 +114,12 @@ impl Connector for AmpConnector {
                     let title = val
                         .get("title")
                         .and_then(|v| v.as_str())
-                        .map(|s| s.to_string())
+                        .map(std::string::ToString::to_string)
                         .or_else(|| {
                             messages
                                 .first()
                                 .and_then(|m| m.content.lines().next())
-                                .map(|s| s.to_string())
+                                .map(std::string::ToString::to_string)
                         });
 
                     let workspace = infer_workspace(&val).or_else(|| {
@@ -135,17 +134,17 @@ impl Connector for AmpConnector {
                     let external_id = path
                         .file_stem()
                         .and_then(|s| s.to_str())
-                        .map(|s| s.to_string())
+                        .map(std::string::ToString::to_string)
                         .or_else(|| {
                             val.get("id")
                                 .and_then(|v| v.as_str())
-                                .map(|s| s.to_string())
+                                .map(std::string::ToString::to_string)
                         });
 
-                    let key = external_id
-                        .clone()
-                        .map(|id| format!("amp:{id}"))
-                        .unwrap_or_else(|| format!("amp:{}", path.display()));
+                    let key = external_id.clone().map_or_else(
+                        || format!("amp:{}", path.display()),
+                        |id| format!("amp:{id}"),
+                    );
                     if seen_ids.insert(key) {
                         convs.push(NormalizedConversation {
                             agent_slug: "amp".into(),
@@ -161,7 +160,7 @@ impl Connector for AmpConnector {
                         tracing::info!(
                             target: "connector::amp",
                             source = %path.display(),
-                            messages = convs.last().map(|c| c.messages.len()).unwrap_or(0),
+                            messages = convs.last().map_or(0, |c| c.messages.len()),
                             since_ts = ctx.since_ts,
                             "amp_scan"
                         );
@@ -185,7 +184,7 @@ fn extract_messages(val: &Value, since_ts: Option<i64>) -> Option<Vec<Normalized
         })?;
 
     let mut out = Vec::new();
-    for m in msgs.into_iter() {
+    for m in msgs {
         let role = m
             .get("role")
             .or_else(|| m.get("speaker"))
@@ -216,7 +215,7 @@ fn extract_messages(val: &Value, since_ts: Option<i64>) -> Option<Vec<Normalized
             .get("author")
             .or_else(|| m.get("sender"))
             .and_then(|v| v.as_str())
-            .map(|s| s.to_string());
+            .map(std::string::ToString::to_string);
 
         if let Some(since) = since_ts
             && let Some(ts) = created_at

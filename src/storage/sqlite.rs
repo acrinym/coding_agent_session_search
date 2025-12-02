@@ -1,4 +1,4 @@
-//! SQLite backend: schema, pragmas, and migrations.
+//! `SQLite` backend: schema, pragmas, and migrations.
 
 use crate::model::types::{Agent, AgentKind, Conversation, Message, MessageRole, Snippet};
 use anyhow::{Context, Result, anyhow};
@@ -9,7 +9,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 const SCHEMA_VERSION: i64 = 3;
 
-const MIGRATION_V1: &str = r#"
+const MIGRATION_V1: &str = r"
 PRAGMA foreign_keys = ON;
 
 CREATE TABLE IF NOT EXISTS meta (
@@ -88,9 +88,9 @@ CREATE INDEX IF NOT EXISTS idx_messages_conv_idx
 
 CREATE INDEX IF NOT EXISTS idx_messages_created
     ON messages(created_at);
-"#;
+";
 
-const MIGRATION_V2: &str = r#"
+const MIGRATION_V2: &str = r"
 CREATE VIRTUAL TABLE IF NOT EXISTS fts_messages USING fts5(
     content,
     title,
@@ -114,9 +114,9 @@ FROM messages m
 JOIN conversations c ON m.conversation_id = c.id
 JOIN agents a ON c.agent_id = a.id
 LEFT JOIN workspaces w ON c.workspace_id = w.id;
-"#;
+";
 
-const MIGRATION_V3: &str = r#"
+const MIGRATION_V3: &str = r"
 DROP TABLE IF EXISTS fts_messages;
 CREATE VIRTUAL TABLE fts_messages USING fts5(
     content,
@@ -141,7 +141,7 @@ FROM messages m
 JOIN conversations c ON m.conversation_id = c.id
 JOIN agents a ON c.agent_id = a.id
 LEFT JOIN workspaces w ON c.workspace_id = w.id;
-"#;
+";
 
 pub struct SqliteStorage {
     conn: Connection,
@@ -234,7 +234,7 @@ impl SqliteStorage {
                 params![path_str],
                 |row| row.get(0),
             )
-            .with_context(|| format!("fetching workspace id for {}", path_str))
+            .with_context(|| format!("fetching workspace id for {path_str}"))
     }
 
     pub fn insert_conversation_tree(
@@ -357,13 +357,13 @@ impl SqliteStorage {
 
     pub fn list_conversations(&self, limit: i64, offset: i64) -> Result<Vec<Conversation>> {
         let mut stmt = self.conn.prepare(
-            r#"SELECT c.id, a.slug, w.path, c.external_id, c.title, c.source_path,
+            r"SELECT c.id, a.slug, w.path, c.external_id, c.title, c.source_path,
                        c.started_at, c.ended_at, c.approx_tokens, c.metadata_json
                 FROM conversations c
                 JOIN agents a ON c.agent_id = a.id
                 LEFT JOIN workspaces w ON c.workspace_id = w.id
                 ORDER BY c.started_at DESC NULLS LAST, c.id DESC
-                LIMIT ? OFFSET ?"#,
+                LIMIT ? OFFSET ?",
         )?;
 
         let rows = stmt.query_map(params![limit, offset], |row| {
@@ -429,12 +429,12 @@ impl SqliteStorage {
     pub fn rebuild_fts(&mut self) -> Result<()> {
         self.conn.execute("DELETE FROM fts_messages", [])?;
         self.conn.execute_batch(
-            r#"INSERT INTO fts_messages(content, title, agent, workspace, source_path, created_at, message_id)
+            r"INSERT INTO fts_messages(content, title, agent, workspace, source_path, created_at, message_id)
                SELECT m.content, c.title, a.slug, w.path, c.source_path, m.created_at, m.id
                FROM messages m
                JOIN conversations c ON m.conversation_id = c.id
                JOIN agents a ON c.agent_id = a.id
-               LEFT JOIN workspaces w ON c.workspace_id = w.id;"#,
+               LEFT JOIN workspaces w ON c.workspace_id = w.id;",
         )?;
         Ok(())
     }
@@ -474,22 +474,22 @@ impl SqliteStorage {
 
 fn apply_pragmas(conn: &mut Connection) -> Result<()> {
     conn.execute_batch(
-        r#"
+        r"
         PRAGMA journal_mode = WAL;
         PRAGMA synchronous = NORMAL;
-        "#,
+        ",
     )?;
     apply_common_pragmas(conn)
 }
 
 fn apply_common_pragmas(conn: &Connection) -> Result<()> {
     conn.execute_batch(
-        r#"
+        r"
         PRAGMA temp_store = MEMORY;
         PRAGMA cache_size = -65536; -- 64MB
         PRAGMA mmap_size = 268435456; -- 256MB
         PRAGMA foreign_keys = ON;
-        "#,
+        ",
     )?;
     Ok(())
 }
@@ -555,7 +555,7 @@ fn migrate(conn: &mut Connection) -> Result<()> {
             )?;
         }
         v if v == SCHEMA_VERSION => {}
-        v => return Err(anyhow!("unsupported schema version {}", v)),
+        v => return Err(anyhow!("unsupported schema version {v}")),
     }
 
     Ok(())

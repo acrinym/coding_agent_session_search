@@ -122,13 +122,13 @@ pub fn parse_timestamp(val: &serde_json::Value) -> Option<i64> {
 }
 
 /// Flatten content that may be a string or array of content blocks.
-/// Extracts text from text blocks and tool names from tool_use blocks.
+/// Extracts text from text blocks and tool names from `tool_use` blocks.
 ///
 /// Handles:
 /// - Direct string content (e.g., user messages)
 /// - Array of content blocks with `{"type": "text", "text": "..."}`
 /// - Tool use blocks: `{"type": "tool_use", "name": "Read", "input": {...}}`
-/// - Codex input_text blocks: `{"type": "input_text", "text": "..."}`
+/// - Codex `input_text` blocks: `{"type": "input_text", "text": "..."}`
 pub fn flatten_content(val: &serde_json::Value) -> String {
     // Direct string content (user messages in Claude Code)
     if let Some(s) = val.as_str() {
@@ -170,9 +170,9 @@ pub fn flatten_content(val: &serde_json::Value) -> String {
                         })
                         .unwrap_or("");
                     if desc.is_empty() {
-                        return Some(format!("[Tool: {}]", name));
+                        return Some(format!("[Tool: {name}]"));
                     }
-                    return Some(format!("[Tool: {} - {}]", name, desc));
+                    return Some(format!("[Tool: {name} - {desc}]"));
                 }
 
                 None

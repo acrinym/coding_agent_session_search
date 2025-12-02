@@ -18,7 +18,7 @@ fn sample_conv(external_id: Option<&str>, messages: Vec<Message>) -> Conversatio
         id: None,
         agent_slug: "tester".into(),
         workspace: Some(PathBuf::from("/workspace/demo")),
-        external_id: external_id.map(|s| s.to_owned()),
+        external_id: external_id.map(std::borrow::ToOwned::to_owned),
         title: Some("Demo conversation".into()),
         source_path: PathBuf::from("/logs/demo.jsonl"),
         started_at: Some(1),
@@ -476,7 +476,7 @@ fn migration_from_v1_applies_v2_and_v3() {
     {
         let conn = Connection::open(&db_path).expect("create v1 db");
         conn.execute_batch(
-            r#"
+            r"
             PRAGMA foreign_keys = ON;
 
             CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
@@ -545,7 +545,7 @@ fn migration_from_v1_applies_v2_and_v3() {
             CREATE INDEX idx_conversations_agent_started ON conversations(agent_id, started_at DESC);
             CREATE INDEX idx_messages_conv_idx ON messages(conversation_id, idx);
             CREATE INDEX idx_messages_created ON messages(created_at);
-            "#,
+            ",
         )
         .expect("create v1 schema");
     }
@@ -580,7 +580,7 @@ fn migration_from_v2_applies_v3() {
     {
         let conn = Connection::open(&db_path).expect("create v2 db");
         conn.execute_batch(
-            r#"
+            r"
             PRAGMA foreign_keys = ON;
 
             CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
@@ -661,7 +661,7 @@ fn migration_from_v2_applies_v3() {
                 message_id UNINDEXED,
                 tokenize='porter'
             );
-            "#,
+            ",
         )
         .expect("create v2 schema");
     }

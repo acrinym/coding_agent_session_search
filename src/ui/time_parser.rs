@@ -86,9 +86,8 @@ pub fn parse_time_input(input: &str) -> Option<i64> {
         // Heuristic: timestamps < 10^11 (year 5138) are likely seconds.
         if n < 100_000_000_000 {
             return Some(n * 1000);
-        } else {
-            return Some(n);
         }
+        return Some(n);
     }
 
     None

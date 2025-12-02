@@ -98,7 +98,7 @@ fn export_markdown(hits: &[SearchHit], options: &ExportOptions) -> String {
     output.push_str("# Search Results\n\n");
 
     if let Some(query) = &options.query {
-        output.push_str(&format!("**Query:** `{}`\n\n", query));
+        output.push_str(&format!("**Query:** `{query}`\n\n"));
     }
 
     output.push_str(&format!(
@@ -139,10 +139,10 @@ fn export_markdown(hits: &[SearchHit], options: &ExportOptions) -> String {
             } else {
                 hit.source_path.clone()
             };
-            output.push_str(&format!("| Source | `{}` |\n", path_display));
+            output.push_str(&format!("| Source | `{path_display}` |\n"));
 
             if let Some(line) = hit.line_number {
-                output.push_str(&format!("| Line | {} |\n", line));
+                output.push_str(&format!("| Line | {line} |\n"));
             }
         }
 
@@ -229,7 +229,7 @@ fn export_plain_text(hits: &[SearchHit], options: &ExportOptions) -> String {
     output.push('\n');
 
     if let Some(query) = &options.query {
-        output.push_str(&format!("Query: {}\n", query));
+        output.push_str(&format!("Query: {query}\n"));
     }
 
     output.push_str(&format!(
@@ -263,7 +263,7 @@ fn export_plain_text(hits: &[SearchHit], options: &ExportOptions) -> String {
         if options.include_path {
             output.push_str(&format!("Source: {}\n", hit.source_path));
             if let Some(line) = hit.line_number {
-                output.push_str(&format!("Line: {}\n", line));
+                output.push_str(&format!("Line: {line}\n"));
             }
         }
 
@@ -271,13 +271,13 @@ fn export_plain_text(hits: &[SearchHit], options: &ExportOptions) -> String {
         output.push_str("Snippet:\n");
         let snippet = truncate_text(&hit.snippet, options.max_snippet_len);
         for line in snippet.lines() {
-            output.push_str(&format!("  {}\n", line));
+            output.push_str(&format!("  {line}\n"));
         }
 
         if options.include_content && !hit.content.is_empty() {
             output.push_str("\nFull Content:\n");
             for line in hit.content.lines() {
-                output.push_str(&format!("  {}\n", line));
+                output.push_str(&format!("  {line}\n"));
             }
         }
 

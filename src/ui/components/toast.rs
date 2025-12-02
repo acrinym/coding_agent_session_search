@@ -237,7 +237,7 @@ impl ToastManager {
         self.toasts.retain(|t| t.toast_type != toast_type);
     }
 
-    /// Get visible toasts (limited by max_visible)
+    /// Get visible toasts (limited by `max_visible`)
     pub fn visible(&self) -> impl Iterator<Item = &Toast> {
         self.toasts.iter().take(self.max_visible)
     }
@@ -315,7 +315,7 @@ pub fn render_toasts(frame: &mut Frame, manager: &ToastManager, palette: &ThemeP
 
         let content = Line::from(vec![
             Span::styled(
-                format!("[{}] ", icon),
+                format!("[{icon}] "),
                 Style::default().fg(color).add_modifier(Modifier::BOLD),
             ),
             Span::styled(&toast.message, Style::default().fg(palette.fg)),

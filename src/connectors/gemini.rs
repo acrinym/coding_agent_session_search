@@ -80,8 +80,7 @@ fn extract_path_from_position(content: &str, start: usize) -> Option<PathBuf> {
         && path_str
             .chars()
             .next()
-            .map(|c| c.is_ascii_alphabetic())
-            .unwrap_or(false)
+            .is_some_and(|c| c.is_ascii_alphabetic())
         && path_str.chars().nth(1) == Some(':')
         && (path_str.chars().nth(2) == Some('\\') || path_str.chars().nth(2) == Some('/'));
     let is_win_unc = path_str.starts_with("\\\\");
@@ -136,9 +135,10 @@ impl GeminiConnector {
     }
 
     fn root() -> PathBuf {
-        std::env::var("GEMINI_HOME")
-            .map(PathBuf::from)
-            .unwrap_or_else(|_| dirs::home_dir().unwrap_or_default().join(".gemini/tmp"))
+        std::env::var("GEMINI_HOME").map_or_else(
+            |_| dirs::home_dir().unwrap_or_default().join(".gemini/tmp"),
+            PathBuf::from,
+        )
     }
 
     /// Find all session JSON files in the Gemini structure.
@@ -187,17 +187,10 @@ impl Connector for GeminiConnector {
         let root = if ctx
             .data_root
             .file_name()
-            .map(|n| n.to_str().unwrap_or("").contains("gemini"))
-            .unwrap_or(false)
+            .is_some_and(|n| n.to_str().unwrap_or("").contains("gemini"))
             || ctx.data_root.join("chats").exists()
             || fs::read_dir(&ctx.data_root)
-                .map(|mut d| {
-                    d.any(|e| {
-                        e.ok()
-                            .map(|e| e.path().join("chats").exists())
-                            .unwrap_or(false)
-                    })
-                })
+                .map(|mut d| d.any(|e| e.ok().is_some_and(|e| e.path().join("chats").exists())))
                 .unwrap_or(false)
         {
             ctx.data_root.clone()
@@ -252,7 +245,7 @@ impl Connector for GeminiConnector {
             let mut started_at = start_time;
             let mut ended_at = last_updated;
 
-            for item in messages_arr.iter() {
+            for item in messages_arr {
                 // Role from "type" field - Gemini uses "user" and "model"
                 let msg_type = item.get("type").and_then(|v| v.as_str()).unwrap_or("model");
                 let role = if msg_type == "model" {
@@ -333,7 +326,7 @@ impl Connector for GeminiConnector {
                 // Structure: ~/.gemini/tmp/<hash>/chats/session-*.json
                 file.parent() // chats/
                     .and_then(|p| p.parent()) // <hash>/
-                    .map(|p| p.to_path_buf())
+                    .map(std::path::Path::to_path_buf)
             });
 
             convs.push(NormalizedConversation {

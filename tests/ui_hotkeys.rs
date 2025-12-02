@@ -17,3 +17,19 @@ fn footer_mentions_editor_and_clear_keys() {
         "short footer should show F1 help"
     );
 }
+
+#[test]
+fn help_includes_detail_find_hotkeys() {
+    let lines = coding_agent_search::ui::tui::help_lines(
+        coding_agent_search::ui::components::theme::ThemePalette::dark(),
+    );
+    let text: String = lines.iter().map(|l| l.to_string()).collect();
+    assert!(
+        text.contains("/ detail-find"),
+        "help should mention detail-find shortcut"
+    );
+    assert!(
+        text.contains("n/N"),
+        "help should mention n/N navigation in detail-find"
+    );
+}

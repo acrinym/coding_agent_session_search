@@ -522,7 +522,7 @@ fn amp_handles_empty_directory() {
     assert!(convs.is_empty());
 }
 
-/// Test agent_slug is always "amp"
+/// Test `agent_slug` is always "amp"
 #[test]
 fn amp_sets_correct_agent_slug() {
     let dir = TempDir::new().unwrap();
@@ -547,7 +547,7 @@ fn amp_sets_correct_agent_slug() {
     assert_eq!(convs[0].agent_slug, "amp");
 }
 
-/// Test source_path is set correctly
+/// Test `source_path` is set correctly
 #[test]
 fn amp_sets_source_path() {
     let dir = TempDir::new().unwrap();
@@ -569,7 +569,7 @@ fn amp_sets_source_path() {
     assert_eq!(convs[0].source_path, file_path);
 }
 
-/// Test started_at and ended_at are computed from message timestamps
+/// Test `started_at` and `ended_at` are computed from message timestamps
 #[test]
 fn amp_computes_started_ended_at() {
     let dir = TempDir::new().unwrap();
@@ -635,7 +635,7 @@ fn amp_assigns_sequential_indices() {
     }
 }
 
-/// Test workspace extraction from alternate keys (cwd, path, project_path, repo, root)
+/// Test workspace extraction from alternate keys (cwd, path, `project_path`, repo, root)
 #[test]
 fn amp_workspace_from_alternate_keys() {
     let dir = TempDir::new().unwrap();
@@ -810,7 +810,7 @@ fn amp_handles_camel_case_timestamps() {
     assert_eq!(convs[0].messages[0].created_at, Some(1700000000000));
 }
 
-/// Test nested directories are scanned recursively (uses WalkDir)
+/// Test nested directories are scanned recursively (uses `WalkDir`)
 #[test]
 fn amp_scans_nested_directories() {
     let dir = TempDir::new().unwrap();

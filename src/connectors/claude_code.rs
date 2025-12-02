@@ -48,8 +48,7 @@ impl Connector for ClaudeCodeConnector {
             || ctx
                 .data_root
                 .file_name()
-                .map(|n| n.to_str().unwrap_or("").contains("claude"))
-                .unwrap_or(false)
+                .is_some_and(|n| n.to_str().unwrap_or("").contains("claude"))
         {
             ctx.data_root.clone()
         } else {
@@ -116,7 +115,7 @@ impl Connector for ClaudeCodeConnector {
 
                     // Filter to user/assistant entries only (skip summary, file-history-snapshot, etc.)
                     let entry_type = val.get("type").and_then(|v| v.as_str());
-                    if !matches!(entry_type, Some("user") | Some("assistant")) {
+                    if !matches!(entry_type, Some("user" | "assistant")) {
                         continue;
                     }
 
@@ -178,7 +177,7 @@ impl Connector for ClaudeCodeConnector {
                 // JSON or Claude format files
                 let val: Value = serde_json::from_str(&content).unwrap_or(Value::Null);
                 if let Some(arr) = val.get("messages").and_then(|m| m.as_array()) {
-                    for item in arr.iter() {
+                    for item in arr {
                         let role = item
                             .get("role")
                             .or_else(|| item.get("type"))
@@ -264,7 +263,7 @@ impl Connector for ClaudeCodeConnector {
                     .and_then(|v| {
                         v.get("title")
                             .and_then(|t| t.as_str())
-                            .map(|s| s.to_string())
+                            .map(std::string::ToString::to_string)
                     })
                     .or_else(|| {
                         messages
@@ -280,7 +279,7 @@ impl Connector for ClaudeCodeConnector {
                     .path()
                     .file_name()
                     .and_then(|s| s.to_str())
-                    .map(|s| s.to_string()),
+                    .map(std::string::ToString::to_string),
                 title,
                 workspace, // Now populated from cwd field!
                 source_path: entry.path().to_path_buf(),

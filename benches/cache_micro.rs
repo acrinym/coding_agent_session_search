@@ -79,7 +79,7 @@ fn bench_cache_hits(c: &mut Criterion) {
             client
                 .search("alp", filters.clone(), 10, 0)
                 .expect("search")
-        })
+        });
     });
 }
 
@@ -94,7 +94,7 @@ fn bench_typing_forward(c: &mut Criterion) {
             for prefix in &prefixes {
                 let _ = client.search(prefix, filters.clone(), 10, 0);
             }
-        })
+        });
     });
 }
 
@@ -114,7 +114,7 @@ fn bench_typing_backspace(c: &mut Criterion) {
             for prefix in &prefixes {
                 let _ = client.search(prefix, filters.clone(), 10, 0);
             }
-        })
+        });
     });
 }
 
@@ -130,7 +130,7 @@ fn bench_rapid_keystroke_mixed(c: &mut Criterion) {
             for query in &sequence {
                 let _ = client.search(query, filters.clone(), 10, 0);
             }
-        })
+        });
     });
 }
 
@@ -146,7 +146,7 @@ fn bench_cache_miss(c: &mut Criterion) {
             counter += 1;
             let query = format!("unique{counter}");
             let _ = client.search(&query, filters.clone(), 10, 0);
-        })
+        });
     });
 }
 
@@ -163,7 +163,7 @@ fn bench_filtered_search(c: &mut Criterion) {
             client
                 .search("alp", filters.clone(), 10, 0)
                 .expect("search")
-        })
+        });
     });
 }
 
