@@ -129,6 +129,11 @@ pub enum Commands {
         /// Output as JSON (for automation)
         #[arg(long)]
         json: bool,
+
+        /// Idempotency key for safe retries. If the same key is used with identical parameters,
+        /// the cached result is returned. Keys expire after 24 hours.
+        #[arg(long)]
+        idempotency_key: Option<String>,
     },
     /// Generate shell completions to stdout
     Completions {
@@ -215,6 +220,12 @@ pub enum Commands {
         /// Include query explanation in output (shows parsed query, index strategy, cost estimate)
         #[arg(long)]
         explain: bool,
+        /// Validate and analyze query without executing (returns explanation, estimated cost, warnings)
+        #[arg(long)]
+        dry_run: bool,
+        /// Timeout in milliseconds. Returns partial results and error if exceeded.
+        #[arg(long)]
+        timeout: Option<u64>,
     },
     /// Show statistics about indexed data
     Stats {
@@ -304,6 +315,20 @@ pub enum Commands {
         /// Staleness threshold in seconds (default: 300)
         #[arg(long, default_value = "300")]
         stale_threshold: u64,
+    },
+    /// Find related sessions for a given source path
+    Context {
+        /// Path to the source session file
+        path: PathBuf,
+        /// Override data dir
+        #[arg(long)]
+        data_dir: Option<PathBuf>,
+        /// Output as JSON
+        #[arg(long)]
+        json: bool,
+        /// Maximum results per relation type (default: 5)
+        #[arg(long, default_value_t = 5)]
+        limit: usize,
     },
 }
 
@@ -991,7 +1016,10 @@ fn get_common_mistakes(intent: &str) -> Option<serde_json::Value> {
                 "cass search \"query\" --limit 5",
             ),
             // Missing query entirely
-            ("cass search --robot --limit 5", "cass search \"your query\" --robot --limit 5"),
+            (
+                "cass search --robot --limit 5",
+                "cass search \"your query\" --robot --limit 5",
+            ),
         ]
     } else if intent.contains("documentation") {
         vec![
@@ -1244,27 +1272,14 @@ pub async fn run() -> CliResult<()> {
         .flatten()
         .collect();
 
-    if !all_notes.is_empty() && !is_doc_mode {
-        if is_robot_mode {
-            // Output JSON-formatted correction notice for agents
-            let correction_json = serde_json::json!({
-                "type": "syntax_correction",
-                "message": "Your command was auto-corrected. Please use the canonical form in future requests.",
-                "corrections": all_notes,
-                "tip": "Run 'cass robot-docs' for complete syntax documentation."
-            });
-            eprintln!(
-                "{}",
-                serde_json::to_string(&correction_json).unwrap_or_else(|_| all_notes.join("; "))
-            );
-        } else {
-            // Human-readable correction notice
-            eprintln!("Note: Your command was auto-corrected:");
-            for note in &all_notes {
-                eprintln!("  • {note}");
-            }
-            eprintln!("Tip: Run 'cass --help' for proper syntax.");
+    // Suppress correction chatter for robot/doc modes; still show for humans
+    if !all_notes.is_empty() && !is_doc_mode && !is_robot_mode {
+        // Human-readable correction notice
+        eprintln!("Note: Your command was auto-corrected:");
+        for note in &all_notes {
+            eprintln!("  • {note}");
         }
+        eprintln!("Tip: Run 'cass --help' for proper syntax.");
     }
 
     let result = execute_cli(
@@ -1439,6 +1454,7 @@ async fn execute_cli(
                     watch_once,
                     data_dir,
                     json,
+                    idempotency_key,
                 } => {
                     run_index_with_data(
                         cli.db.clone(),
@@ -1449,6 +1465,7 @@ async fn execute_cli(
                         data_dir,
                         progress,
                         json,
+                        idempotency_key,
                     )?;
                 }
                 Commands::Search {
@@ -1475,6 +1492,8 @@ async fn execute_cli(
                     until,
                     aggregate,
                     explain,
+                    dry_run: _,
+                    timeout,
                 } => {
                     run_cli_search(
                         &query,
@@ -1505,6 +1524,8 @@ async fn execute_cli(
                         ),
                         aggregate,
                         explain,
+                        false,
+                        timeout,
                     )?;
                 }
                 Commands::Stats { data_dir, json } => {
@@ -1580,6 +1601,14 @@ async fn execute_cli(
                     stale_threshold,
                 } => {
                     run_health(&data_dir, cli.db.clone(), json, stale_threshold)?;
+                }
+                Commands::Context {
+                    path,
+                    data_dir,
+                    json,
+                    limit,
+                } => {
+                    run_context(&path, &data_dir, cli.db.clone(), json, limit)?;
                 }
                 _ => {}
             }
@@ -1731,6 +1760,7 @@ fn describe_command(cli: &Cli) -> String {
         Some(Commands::Introspect { .. }) => "introspect".to_string(),
         Some(Commands::RobotDocs { topic }) => format!("robot-docs:{topic:?}"),
         Some(Commands::Health { .. }) => "health".to_string(),
+        Some(Commands::Context { .. }) => "context".to_string(),
         None => "(default)".to_string(),
     }
 }
@@ -1755,6 +1785,7 @@ fn is_robot_mode(command: &Commands) -> bool {
         Commands::View { json, .. } => *json,
         Commands::Capabilities { json, .. } => *json,
         Commands::Introspect { json, .. } => *json,
+        Commands::Context { json, .. } => *json,
         _ => false,
     }
 }
@@ -2015,16 +2046,25 @@ fn render_schema_docs() -> Vec<String> {
     lines
 }
 
+/// Extract request_id from CLI command if present (currently only Search has it)
+fn extract_request_id(cli: &Cli) -> Option<String> {
+    match &cli.command {
+        Some(Commands::Search { request_id, .. }) => request_id.clone(),
+        _ => None,
+    }
+}
+
 fn write_trace_line(
     path: &PathBuf,
     label: &str,
-    _cli: &Cli,
+    cli: &Cli,
     start_ts: &chrono::DateTime<Utc>,
     duration_ms: u128,
     exit_code: i32,
     error: Option<&CliError>,
 ) -> io::Result<()> {
     let args: Vec<String> = std::env::args().collect();
+    let request_id = extract_request_id(cli);
     let payload = serde_json::json!({
         "start_ts": start_ts.to_rfc3339(),
         "end_ts": (*start_ts
@@ -2041,6 +2081,7 @@ fn write_trace_line(
             "hint": e.hint,
             "retryable": e.retryable,
         })),
+        "request_id": request_id,
         "contract_version": CONTRACT_VERSION,
         "crate_version": env!("CARGO_PKG_VERSION"),
     });
@@ -2222,6 +2263,8 @@ fn run_cli_search(
     time_filter: TimeFilter,
     aggregate: Option<Vec<String>>,
     explain: bool,
+    dry_run: bool,
+    timeout_ms: Option<u64>,
 ) -> CliResult<()> {
     use crate::search::query::{QueryExplanation, SearchClient, SearchFilters};
     use crate::search::tantivy::index_dir;
@@ -2310,6 +2353,32 @@ fn run_cli_search(
         .unwrap_or_default();
     let has_aggregation = !agg_fields.is_empty();
 
+    // Handle dry-run mode: validate and analyze query without executing
+    if dry_run {
+        let explanation = QueryExplanation::analyze(query, &filters);
+        let elapsed_ms = start_time.elapsed().as_millis();
+
+        let output = serde_json::json!({
+            "dry_run": true,
+            "valid": explanation.warnings.iter().all(|w| !w.contains("error") && !w.contains("invalid")),
+            "query": query,
+            "explanation": explanation,
+            "estimated_cost": format!("{:?}", explanation.estimated_cost),
+            "warnings": explanation.warnings,
+            "request_id": request_id,
+            "_meta": {
+                "elapsed_ms": elapsed_ms,
+                "dry_run": true,
+            }
+        });
+
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&output).unwrap_or_else(|_| output.to_string())
+        );
+        return Ok(());
+    }
+
     // Use search_with_fallback to get full metadata (wildcard_fallback, cache_stats)
     let sparse_threshold = 3; // Threshold for triggering wildcard fallback
 
@@ -2320,6 +2389,23 @@ fn run_cli_search(
     } else {
         (limit_val, offset_val)
     };
+
+    // Check if we're already past timeout before starting search
+    let timeout_duration = timeout_ms.map(Duration::from_millis);
+    if let Some(timeout) = timeout_duration
+        && start_time.elapsed() >= timeout
+    {
+        return Err(CliError {
+            code: 10,
+            kind: "timeout",
+            message: format!(
+                "Operation timed out after {}ms (before search started)",
+                timeout_ms.unwrap()
+            ),
+            hint: Some("Increase --timeout value or simplify query".to_string()),
+            retryable: true,
+        });
+    }
 
     let result = client
         .search_with_fallback(
@@ -2336,6 +2422,9 @@ fn run_cli_search(
             hint: None,
             retryable: true,
         })?;
+
+    // Check if search exceeded timeout - return partial results with timeout indicator
+    let timed_out = timeout_duration.is_some_and(|t| start_time.elapsed() > t);
 
     // Build query explanation if requested
     let explanation = if explain {
@@ -2487,6 +2576,8 @@ fn run_cli_search(
             &aggregations,
             total_matches,
             explanation.as_ref(),
+            timed_out,
+            timeout_ms,
         )?;
     } else if display_result.hits.is_empty() {
         eprintln!("No results found.");
@@ -2712,7 +2803,7 @@ fn clamp_hits_to_budget(
 }
 
 /// Output search results in robot-friendly format
-#[allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_arguments, unused_variables)]
 fn output_robot_results(
     query: &str,
     limit: usize,
@@ -2733,6 +2824,8 @@ fn output_robot_results(
     aggregations: &Aggregations,
     total_matches: usize,
     explanation: Option<&crate::search::query::QueryExplanation>,
+    timed_out: bool,
+    timeout_ms: Option<u64>,
 ) -> CliResult<()> {
     // Expand presets (minimal, summary, all, *)
     let resolved_fields = expand_field_presets(fields);
@@ -2820,12 +2913,35 @@ fn output_robot_results(
                 {
                     m.insert("index_freshness".to_string(), freshness);
                 }
+                // Add timeout info to _meta if timeout was configured
+                if let serde_json::Value::Object(ref mut m) = meta
+                    && let Some(timeout) = timeout_ms
+                {
+                    m.insert("timeout_ms".to_string(), serde_json::json!(timeout));
+                    m.insert("timed_out".to_string(), serde_json::json!(timed_out));
+                    if timed_out {
+                        m.insert("partial_results".to_string(), serde_json::json!(true));
+                    }
+                }
                 map.insert("_meta".to_string(), meta);
 
                 if let Some(warn) = &warning {
                     map.insert(
                         "_warning".to_string(),
                         serde_json::Value::String(warn.clone()),
+                    );
+                }
+                // Add top-level timeout indicator if timed out
+                if timed_out {
+                    map.insert(
+                        "_timeout".to_string(),
+                        serde_json::json!({
+                            "code": 10,
+                            "kind": "timeout",
+                            "message": format!("Operation exceeded timeout of {}ms", timeout_ms.unwrap_or(0)),
+                            "retryable": true,
+                            "partial_results": true
+                        }),
                     );
                 }
             }
@@ -2907,6 +3023,29 @@ fn output_robot_results(
                         serde_json::Value::String(warn.clone()),
                     );
                 }
+                // Add timeout info to JSONL _meta
+                if let Some(m) = meta.get_mut("_meta").and_then(|v| v.as_object_mut())
+                    && let Some(timeout) = timeout_ms
+                {
+                    m.insert("timeout_ms".to_string(), serde_json::json!(timeout));
+                    m.insert("timed_out".to_string(), serde_json::json!(timed_out));
+                    if timed_out {
+                        m.insert("partial_results".to_string(), serde_json::json!(true));
+                    }
+                }
+                // Add top-level timeout indicator if timed out
+                if timed_out && let serde_json::Value::Object(ref mut map) = meta {
+                    map.insert(
+                        "_timeout".to_string(),
+                        serde_json::json!({
+                            "code": 10,
+                            "kind": "timeout",
+                            "message": format!("Operation exceeded timeout of {}ms", timeout_ms.unwrap_or(0)),
+                            "retryable": true,
+                            "partial_results": true
+                        }),
+                    );
+                }
                 println!("{}", serde_json::to_string(&meta).unwrap_or_default());
             }
             // One hit per line (with field filtering applied)
@@ -2972,11 +3111,34 @@ fn output_robot_results(
                 {
                     m.insert("index_freshness".to_string(), freshness);
                 }
+                // Add timeout info to _meta if timeout was configured
+                if let serde_json::Value::Object(ref mut m) = meta
+                    && let Some(timeout) = timeout_ms
+                {
+                    m.insert("timeout_ms".to_string(), serde_json::json!(timeout));
+                    m.insert("timed_out".to_string(), serde_json::json!(timed_out));
+                    if timed_out {
+                        m.insert("partial_results".to_string(), serde_json::json!(true));
+                    }
+                }
                 map.insert("_meta".to_string(), meta);
                 if let Some(warn) = &warning {
                     map.insert(
                         "_warning".to_string(),
                         serde_json::Value::String(warn.clone()),
+                    );
+                }
+                // Add top-level timeout indicator if timed out
+                if timed_out {
+                    map.insert(
+                        "_timeout".to_string(),
+                        serde_json::json!({
+                            "code": 10,
+                            "kind": "timeout",
+                            "message": format!("Operation exceeded timeout of {}ms", timeout_ms.unwrap_or(0)),
+                            "retryable": true,
+                            "partial_results": true
+                        }),
                     );
                 }
             }
@@ -3179,6 +3341,10 @@ fn run_diag(
     let gemini_path = home.join(".gemini/tmp");
     let opencode_path = home.join(".opencode");
     let amp_path = config_dir.join("Code/User/globalStorage/sourcegraph.amp");
+    let cursor_path = crate::connectors::cursor::CursorConnector::app_support_dir()
+        .unwrap_or_else(|| home.join("Library/Application Support/Cursor/User"));
+    let chatgpt_path = crate::connectors::chatgpt::ChatGptConnector::app_support_dir()
+        .unwrap_or_else(|| home.join("Library/Application Support/com.openai.chat"));
 
     let agent_paths: Vec<(&str, &std::path::Path, bool)> = vec![
         ("codex", &codex_path, codex_path.exists()),
@@ -3187,6 +3353,8 @@ fn run_diag(
         ("gemini", &gemini_path, gemini_path.exists()),
         ("opencode", &opencode_path, opencode_path.exists()),
         ("amp", &amp_path, amp_path.exists()),
+        ("cursor", &cursor_path, cursor_path.exists()),
+        ("chatgpt", &chatgpt_path, chatgpt_path.exists()),
     ];
 
     let platform = std::env::consts::OS;
@@ -3593,6 +3761,295 @@ fn run_health(
     }
 }
 
+/// Find related sessions for a given source path.
+/// Returns sessions that share the same workspace, same day, or same agent.
+fn run_context(
+    path: &Path,
+    data_dir_override: &Option<PathBuf>,
+    db_override: Option<PathBuf>,
+    json: bool,
+    limit: usize,
+) -> CliResult<()> {
+    use rusqlite::Connection;
+
+    let data_dir = data_dir_override.clone().unwrap_or_else(default_data_dir);
+    let db_path = db_override.unwrap_or_else(|| data_dir.join("agent_search.db"));
+
+    if !db_path.exists() {
+        return Err(CliError {
+            code: 3,
+            kind: "missing_index",
+            message: "Database not found".to_string(),
+            hint: Some("Run 'cass index --full' to create the database.".to_string()),
+            retryable: true,
+        });
+    }
+
+    let conn = Connection::open(&db_path).map_err(|e| CliError {
+        code: 9,
+        kind: "db-open",
+        message: format!("Failed to open database: {e}"),
+        hint: None,
+        retryable: false,
+    })?;
+
+    // Find the source conversation by path (normalized to string)
+    let path_str = path.to_string_lossy().to_string();
+    #[allow(clippy::type_complexity)]
+    let source_conv: Option<(i64, i64, Option<i64>, Option<i64>, String, String)> = conn
+        .query_row(
+            "SELECT c.id, c.agent_id, c.workspace_id, c.started_at, c.title, a.slug
+             FROM conversations c
+             JOIN agents a ON c.agent_id = a.id
+             WHERE c.source_path = ?1",
+            [&path_str],
+            |r: &rusqlite::Row| {
+                Ok((
+                    r.get(0)?,
+                    r.get(1)?,
+                    r.get(2)?,
+                    r.get(3)?,
+                    r.get::<_, Option<String>>(4)?.unwrap_or_default(),
+                    r.get(5)?,
+                ))
+            },
+        )
+        .ok();
+
+    let Some((conv_id, agent_id, workspace_id, started_at, title, agent_slug)) = source_conv else {
+        return Err(CliError {
+            code: 4,
+            kind: "not_found",
+            message: format!("No session found at path: {path_str}"),
+            hint: Some(
+                "Use 'cass search' to find sessions, then use the source_path from results."
+                    .to_string(),
+            ),
+            retryable: false,
+        });
+    };
+
+    // Get workspace path for display
+    let workspace_path: Option<String> = workspace_id.and_then(|ws_id: i64| {
+        conn.query_row(
+            "SELECT path FROM workspaces WHERE id = ?1",
+            [ws_id],
+            |r: &rusqlite::Row| r.get::<_, String>(0),
+        )
+        .ok()
+    });
+
+    // Find related sessions: same workspace (excluding self)
+    let same_workspace: Vec<(String, String, String, Option<i64>)> =
+        if let Some(ws_id) = workspace_id {
+            let mut stmt = conn
+                .prepare(
+                    "SELECT c.source_path, c.title, a.slug, c.started_at
+                 FROM conversations c
+                 JOIN agents a ON c.agent_id = a.id
+                 WHERE c.workspace_id = ?1 AND c.id != ?2
+                 ORDER BY c.started_at DESC
+                 LIMIT ?3",
+                )
+                .map_err(|e| CliError::unknown(format!("query prep: {e}")))?;
+            stmt.query_map([ws_id, conv_id, limit as i64], |r: &rusqlite::Row| {
+                Ok((
+                    r.get(0)?,
+                    r.get::<_, Option<String>>(1)?.unwrap_or_default(),
+                    r.get(2)?,
+                    r.get(3)?,
+                ))
+            })
+            .map_err(|e| CliError::unknown(format!("query: {e}")))?
+            .filter_map(std::result::Result::ok)
+            .collect()
+        } else {
+            Vec::new()
+        };
+
+    // Find related sessions: same day (within 24 hours of started_at)
+    let same_day: Vec<(String, String, String, Option<i64>)> = if let Some(ts) = started_at {
+        let day_start = ts - (ts % 86_400_000); // Start of day in milliseconds
+        let day_end = day_start + 86_400_000;
+        let mut stmt = conn
+            .prepare(
+                "SELECT c.source_path, c.title, a.slug, c.started_at
+                 FROM conversations c
+                 JOIN agents a ON c.agent_id = a.id
+                 WHERE c.started_at >= ?1 AND c.started_at < ?2 AND c.id != ?3
+                 ORDER BY c.started_at DESC
+                 LIMIT ?4",
+            )
+            .map_err(|e| CliError::unknown(format!("query prep: {e}")))?;
+        stmt.query_map(
+            [day_start, day_end, conv_id, limit as i64],
+            |r: &rusqlite::Row| {
+                Ok((
+                    r.get(0)?,
+                    r.get::<_, Option<String>>(1)?.unwrap_or_default(),
+                    r.get(2)?,
+                    r.get(3)?,
+                ))
+            },
+        )
+        .map_err(|e| CliError::unknown(format!("query: {e}")))?
+        .filter_map(std::result::Result::ok)
+        .collect()
+    } else {
+        Vec::new()
+    };
+
+    // Find related sessions: same agent (excluding self)
+    let same_agent: Vec<(String, String, Option<i64>)> = {
+        let mut stmt = conn
+            .prepare(
+                "SELECT c.source_path, c.title, c.started_at
+                 FROM conversations c
+                 WHERE c.agent_id = ?1 AND c.id != ?2
+                 ORDER BY c.started_at DESC
+                 LIMIT ?3",
+            )
+            .map_err(|e| CliError::unknown(format!("query prep: {e}")))?;
+        stmt.query_map([agent_id, conv_id, limit as i64], |r: &rusqlite::Row| {
+            Ok((
+                r.get(0)?,
+                r.get::<_, Option<String>>(1)?.unwrap_or_default(),
+                r.get(2)?,
+            ))
+        })
+        .map_err(|e| CliError::unknown(format!("query: {e}")))?
+        .filter_map(std::result::Result::ok)
+        .collect()
+    };
+
+    if json {
+        let format_ts = |ts: Option<i64>| -> Option<String> {
+            ts.and_then(|t| chrono::DateTime::from_timestamp_millis(t).map(|d| d.to_rfc3339()))
+        };
+
+        let payload = serde_json::json!({
+            "source": {
+                "path": path_str,
+                "title": title,
+                "agent": agent_slug,
+                "workspace": workspace_path,
+                "started_at": format_ts(started_at),
+            },
+            "related": {
+                "same_workspace": same_workspace.iter().map(|(p, t, a, ts)| {
+                    serde_json::json!({
+                        "path": p,
+                        "title": t,
+                        "agent": a,
+                        "started_at": format_ts(*ts),
+                    })
+                }).collect::<Vec<_>>(),
+                "same_day": same_day.iter().map(|(p, t, a, ts)| {
+                    serde_json::json!({
+                        "path": p,
+                        "title": t,
+                        "agent": a,
+                        "started_at": format_ts(*ts),
+                    })
+                }).collect::<Vec<_>>(),
+                "same_agent": same_agent.iter().map(|(p, t, ts)| {
+                    serde_json::json!({
+                        "path": p,
+                        "title": t,
+                        "started_at": format_ts(*ts),
+                    })
+                }).collect::<Vec<_>>(),
+            },
+            "counts": {
+                "same_workspace": same_workspace.len(),
+                "same_day": same_day.len(),
+                "same_agent": same_agent.len(),
+            }
+        });
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&payload).unwrap_or_default()
+        );
+    } else {
+        use colored::Colorize;
+
+        println!("{}", "Session Context".bold().cyan());
+        println!("{}", "===============".cyan());
+        println!();
+        println!("{}: {}", "Source".bold(), path_str);
+        println!("  Title: {}", title.as_str().yellow());
+        println!("  Agent: {}", agent_slug.as_str().green());
+        if let Some(ws) = &workspace_path {
+            println!("  Workspace: {}", ws.as_str().blue());
+        }
+        if let Some(ts) = started_at
+            && let Some(dt) = chrono::DateTime::from_timestamp_millis(ts)
+        {
+            println!("  Started: {}", dt.format("%Y-%m-%d %H:%M:%S"));
+        }
+        println!();
+
+        if !same_workspace.is_empty() {
+            println!(
+                "{} ({}):",
+                "Same Workspace".bold().blue(),
+                same_workspace.len()
+            );
+            for (path, title_str, agent, timestamp) in &same_workspace {
+                let ts_str = timestamp
+                    .and_then(chrono::DateTime::from_timestamp_millis)
+                    .map(|d| d.format("%Y-%m-%d %H:%M").to_string())
+                    .unwrap_or_default();
+                println!(
+                    "  • {} [{}] {}",
+                    title_str.as_str().yellow(),
+                    agent.as_str().green(),
+                    ts_str.dimmed()
+                );
+                println!("    {}", path.as_str().dimmed());
+            }
+            println!();
+        }
+
+        if !same_day.is_empty() {
+            println!("{} ({}):", "Same Day".bold().magenta(), same_day.len());
+            for (path, title_str, agent, timestamp) in &same_day {
+                let ts_str = timestamp
+                    .and_then(chrono::DateTime::from_timestamp_millis)
+                    .map(|d| d.format("%H:%M").to_string())
+                    .unwrap_or_default();
+                println!(
+                    "  • {} [{}] {}",
+                    title_str.as_str().yellow(),
+                    agent.as_str().green(),
+                    ts_str.dimmed()
+                );
+                println!("    {}", path.as_str().dimmed());
+            }
+            println!();
+        }
+
+        if !same_agent.is_empty() {
+            println!("{} ({}):", "Same Agent".bold().green(), same_agent.len());
+            for (path, title_str, timestamp) in &same_agent {
+                let ts_str = timestamp
+                    .and_then(chrono::DateTime::from_timestamp_millis)
+                    .map(|d| d.format("%Y-%m-%d %H:%M").to_string())
+                    .unwrap_or_default();
+                println!("  • {} {}", title_str.as_str().yellow(), ts_str.dimmed());
+                println!("    {}", path.as_str().dimmed());
+            }
+            println!();
+        }
+
+        if same_workspace.is_empty() && same_day.is_empty() && same_agent.is_empty() {
+            println!("{}", "No related sessions found.".dimmed());
+        }
+    }
+
+    Ok(())
+}
+
 /// Capabilities response for agent introspection.
 /// Provides static information about CLI features, versions, and limits.
 #[derive(Debug, Clone, Serialize)]
@@ -3812,6 +4269,11 @@ fn run_capabilities(json: bool) -> CliResult<()> {
             "content_truncation".to_string(),
             "aggregations".to_string(),
             "wildcard_fallback".to_string(),
+            "timeout".to_string(),
+            "cursor_pagination".to_string(),
+            "request_id".to_string(),
+            "dry_run".to_string(),
+            "query_explain".to_string(),
             "view_command".to_string(),
             "status_command".to_string(),
             "state_command".to_string(),
@@ -4770,12 +5232,94 @@ fn run_index_with_data(
     data_dir_override: Option<PathBuf>,
     progress: ProgressResolved,
     json: bool,
+    idempotency_key: Option<String>,
 ) -> CliResult<()> {
     use rusqlite::Connection;
     use std::time::Instant;
 
     let data_dir = data_dir_override.unwrap_or_else(default_data_dir);
     let db_path = db_override.unwrap_or_else(|| data_dir.join("agent_search.db"));
+
+    // Generate params hash for idempotency validation
+    let params_hash = {
+        use std::hash::{Hash, Hasher};
+        let mut hasher = std::collections::hash_map::DefaultHasher::new();
+        full.hash(&mut hasher);
+        force_rebuild.hash(&mut hasher);
+        watch.hash(&mut hasher);
+        format!("{}", data_dir.display()).hash(&mut hasher);
+        hasher.finish()
+    };
+
+    // Check for cached idempotency result
+    if let Some(key) = &idempotency_key
+        && let Ok(conn) = Connection::open(&db_path)
+    {
+        // Ensure idempotency_keys table exists
+        let _ = conn.execute(
+            "CREATE TABLE IF NOT EXISTS idempotency_keys (
+                key TEXT PRIMARY KEY,
+                params_hash TEXT NOT NULL,
+                result_json TEXT NOT NULL,
+                created_at INTEGER NOT NULL,
+                expires_at INTEGER NOT NULL
+            )",
+            [],
+        );
+
+        // Clean expired keys
+        let now_ms = chrono::Utc::now().timestamp_millis();
+        let _ = conn.execute(
+            "DELETE FROM idempotency_keys WHERE expires_at < ?1",
+            [now_ms],
+        );
+
+        // Look up existing key
+        let cached: Option<(String, String)> = conn
+            .query_row(
+                "SELECT params_hash, result_json FROM idempotency_keys WHERE key = ?1 AND expires_at > ?2",
+                [key, &now_ms.to_string()],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .ok();
+
+        if let Some((stored_hash, result_json)) = cached {
+            // Verify params match
+            if stored_hash == params_hash.to_string() {
+                // Return cached result
+                if json {
+                    // Parse and augment with cached flag
+                    if let Ok(mut val) = serde_json::from_str::<serde_json::Value>(&result_json) {
+                        val["cached"] = serde_json::json!(true);
+                        val["idempotency_key"] = serde_json::json!(key);
+                        println!("{}", serde_json::to_string_pretty(&val).unwrap_or_default());
+                        return Ok(());
+                    }
+                } else {
+                    eprintln!(
+                        "Using cached result for idempotency key '{}' (use different key to force re-index)",
+                        key
+                    );
+                    return Ok(());
+                }
+            } else {
+                // Parameter mismatch - return error
+                return Err(CliError {
+                    code: 5,
+                    kind: "idempotency_mismatch",
+                    message: format!(
+                        "Idempotency key '{}' was used with different parameters",
+                        key
+                    ),
+                    hint: Some(
+                        "Use a different idempotency key or wait for the existing one to expire (24h)".to_string(),
+                    ),
+                    retryable: false,
+                });
+            }
+        }
+    }
+
     let watch_once_paths = watch_once
         .filter(|paths| !paths.is_empty())
         .or_else(read_watch_once_paths_env);
@@ -4857,7 +5401,7 @@ fn run_index_with_data(
         } else {
             (0, 0)
         };
-        let payload = serde_json::json!({
+        let mut payload = serde_json::json!({
             "success": true,
             "elapsed_ms": elapsed_ms,
             "full": full,
@@ -4867,6 +5411,23 @@ fn run_index_with_data(
             "conversations": conversations,
             "messages": messages,
         });
+
+        // Store idempotency key if provided
+        if let Some(key) = &idempotency_key {
+            payload["idempotency_key"] = serde_json::json!(key);
+            payload["cached"] = serde_json::json!(false);
+
+            if let Ok(conn) = Connection::open(&db_path) {
+                let now_ms = chrono::Utc::now().timestamp_millis();
+                let expires_ms = now_ms + 24 * 60 * 60 * 1000; // 24 hours
+                let result_json = serde_json::to_string(&payload).unwrap_or_default();
+                let _ = conn.execute(
+                    "INSERT OR REPLACE INTO idempotency_keys (key, params_hash, result_json, created_at, expires_at) VALUES (?1, ?2, ?3, ?4, ?5)",
+                    rusqlite::params![key, params_hash.to_string(), result_json, now_ms, expires_ms],
+                );
+            }
+        }
+
         println!(
             "{}",
             serde_json::to_string_pretty(&payload).unwrap_or_default()
