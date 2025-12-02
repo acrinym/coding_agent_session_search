@@ -106,26 +106,16 @@ To achieve sub-60ms latency on large datasets, `cass` implements a multi-tier ca
 The system is designed for extensibility via the `Connector` trait (`src/connectors/mod.rs`). This allows `cass` to treat disparate log formats as a uniform stream of events.
 
 ```mermaid
-%% Compact, pastel, narrow-friendly class diagram
 classDiagram
     class Connector {
         <<interface>>
         +detect() DetectionResult
-        +scan(ScanContext) Vec<NormalizedConversation>
+        +scan(ScanContext) Vec~NormalizedConversation~
     }
     class NormalizedConversation {
-        +agent_slug: String
-        +messages: Vec<NormalizedMessage>
+        +agent_slug String
+        +messages Vec~NormalizedMessage~
     }
-    class CodexConnector
-    class ClineConnector
-    class ClaudeCodeConnector
-    class GeminiConnector
-    class OpenCodeConnector
-    class AmpConnector
-    class CursorConnector
-    class ChatGptConnector
-    class AiderConnector
 
     Connector <|-- CodexConnector
     Connector <|-- ClineConnector
@@ -146,20 +136,6 @@ classDiagram
     CursorConnector ..> NormalizedConversation : emits
     ChatGptConnector ..> NormalizedConversation : emits
     AiderConnector ..> NormalizedConversation : emits
-
-    classDef pastel fill:#f4f2ff,stroke:#c2b5ff,color:#2e2963;
-    classDef pastelEdge fill:#e6f7ff,stroke:#9bd5f5,color:#0f3a4d;
-    class Connector pastel
-    class NormalizedConversation pastelEdge
-    class CodexConnector pastel
-    class ClineConnector pastel
-    class ClaudeCodeConnector pastel
-    class GeminiConnector pastel
-    class OpenCodeConnector pastel
-    class AmpConnector pastel
-    class CursorConnector pastel
-    class ChatGptConnector pastel
-    class AiderConnector pastel
 ```
 
 - **Polymorphic Scanning**: The indexer runs connector factories in parallel via rayon, creating fresh `Box<dyn Connector>` instances that are unaware of each other's underlying file formats (JSONL, SQLite, specialized JSON).
